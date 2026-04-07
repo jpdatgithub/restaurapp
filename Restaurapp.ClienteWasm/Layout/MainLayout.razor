@@ -21,9 +21,6 @@
             <MudTooltip Text="Carrinho">
                 <MudIconButton Icon="@Icons.Material.Filled.ShoppingCart" Color="Color.Inherit" OnClick="GoToCarrinho" />
             </MudTooltip>
-            <MudTooltip Text="Conta">
-                <MudIconButton Icon="@Icons.Material.Filled.Receipt" Color="Color.Inherit" OnClick="GoToConta" />
-            </MudTooltip>
             <MudTooltip Text="Perfil">
                 <MudIconButton OnClick="GoToProfile">
                     <MudAvatar Color="Color.Primary" Size="Size.Medium">@_userInitial</MudAvatar>
@@ -93,8 +90,6 @@ else
     private void DarkModeToggle() => _isDarkMode = !_isDarkMode;
 
     private void GoToCarrinho() => Navigation.NavigateTo("/carrinho");
-
-    private void GoToConta() => Navigation.NavigateTo("/conta");
 
     private void GoToProfile() => Navigation.NavigateTo("/profile");
 

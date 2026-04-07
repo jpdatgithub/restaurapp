@@ -109,21 +109,9 @@
     {
         <MudText Typo="Typo.h5" Class="mb-4 mt-3">Configurações</MudText>
 
-        <EditForm Model="_configModel" OnValidSubmit="HandleUpdateConfiguracoes">
-            <MudPaper Class="pa-4 mb-3" Elevation="0">
-                <MudSwitch T="bool" Color="Color.Primary" @bind-Value="_configModel.HabilitarContasPosPagas"
-                           Label="Habilitar contas pós pagas?" />
-                <MudText Typo="Typo.caption" Color="Color.Secondary">
-                    Quando habilitado, pedidos para comer aqui vinculam o cliente a uma conta de mesa até o fechamento.
-                </MudText>
-
-            </MudPaper>
-
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit"
-                       Disabled="_updatingConfig">
-                @(_updatingConfig ? "Salvando..." : "Salvar Configurações")
-            </MudButton>
-        </EditForm>
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-3">
+            Nenhuma configuração adicional disponível nesta versão.
+        </MudAlert>
     }
 
     <MudHidden Breakpoint="Breakpoint.MdAndUp">

@@ -22,8 +22,6 @@ builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredServ
 builder.Services.AddScoped<ClienteAuthService>();
 builder.Services.AddScoped<CarrinhoService>();
 builder.Services.AddScoped<PedidosService>();
-builder.Services.AddScoped<ContaMesaService>();
-builder.Services.AddScoped<ContaMesaEstadoService>();
 builder.Services.AddScoped<ServicoTempoRealPedidosCliente>();
 builder.Services.AddMudServices();
 

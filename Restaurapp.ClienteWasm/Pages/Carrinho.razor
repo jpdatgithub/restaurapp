@@ -3,9 +3,6 @@
 
 @inject CarrinhoService CarrinhoService
 @inject PedidosService PedidosService
-@inject ClienteAuthService ClienteAuthService
-@inject ContaMesaEstadoService ContaMesaEstadoService
-@inject IDialogService DialogService
 @inject NavigationManager Navigation
 
 <PageTitle>Carrinho</PageTitle>
@@ -65,22 +62,12 @@ else
                        Label="Tipo de atendimento" Variant="Variant.Outlined" Class="mt-2">
                 <MudSelectItem Value="TipoAtendimentoCheckout.Entrega">Entrega</MudSelectItem>
                 <MudSelectItem Value="TipoAtendimentoCheckout.Retirada">Takeaway (retirada no local)</MudSelectItem>
-                @if (empresaPermitePedirParaMesa)
-                {
-                    <MudSelectItem Value="TipoAtendimentoCheckout.ComerAqui">Para comer aqui</MudSelectItem>
-                }
             </MudSelect>
 
             @if (tipoAtendimento == TipoAtendimentoCheckout.Entrega)
             {
                 <MudTextField T="string" @bind-Value="enderecoEntrega" Label="Endereço de entrega" Variant="Variant.Outlined"
                               Class="mt-2" />
-            }
-
-            @if (tipoAtendimento == TipoAtendimentoCheckout.ComerAqui)
-            {
-                <MudTextField T="string" @bind-Value="numeroMesa" Label="Número da mesa" Variant="Variant.Outlined"
-                              Disabled="@ContaMesaEstadoService.PossuiContaAberta" Class="mt-2" />
             }
 
             <MudTextField T="string" @bind-Value="observacoes" Label="Observações" Variant="Variant.Outlined" Lines="3"
@@ -119,14 +106,11 @@ else
     private Severity mensagemSeverity = Severity.Info;
     private CarrinhoSnapshot snapshot = new();
     private TipoAtendimentoCheckout tipoAtendimento = TipoAtendimentoCheckout.Entrega;
-    private bool empresaPermitePedirParaMesa = true;
     private string? enderecoEntrega;
-    private string? numeroMesa;
     private string? observacoes;
 
     protected override async Task OnInitializedAsync()
     {
-        await ContaMesaEstadoService.AtualizarAsync();
         await RecarregarCarrinhoAsync();
     }
 
@@ -134,7 +118,6 @@ else
     {
         carregando = true;
         snapshot = await CarrinhoService.GetSnapshotAsync();
-        await AtualizarDisponibilidadePedidoParaMesaAsync();
         carregando = false;
     }
 
@@ -172,40 +155,14 @@ else
             return;
         }
 
-        if (tipoAtendimento == TipoAtendimentoCheckout.ComerAqui && !empresaPermitePedirParaMesa)
-        {
-            mensagemSeverity = Severity.Warning;
-            mensagem = "Esta empresa não disponibiliza pedido para mesa no checkout.";
-            tipoAtendimento = TipoAtendimentoCheckout.Entrega;
-            numeroMesa = null;
-            return;
-        }
-
-        if (tipoAtendimento == TipoAtendimentoCheckout.ComerAqui && string.IsNullOrWhiteSpace(numeroMesa))
-        {
-            mensagemSeverity = Severity.Warning;
-            mensagem = "Informe o número da mesa para pedir para comer aqui.";
-            return;
-        }
-
         finalizando = true;
         mensagem = null;
-
-        if (await DeveSolicitarPagamentoAntesDoCheckoutAsync())
-        {
-            var pagamentoConcluido = await SolicitarPagamentoAntesDoCheckoutAsync();
-            if (!pagamentoConcluido)
-            {
-                finalizando = false;
-                return;
-            }
-        }
 
         var request = new CheckoutPedidoRequest
         {
             EmpresaId = snapshot.EmpresaId,
             Takeaway = tipoAtendimento == TipoAtendimentoCheckout.Retirada,
-            NumeroMesa = tipoAtendimento == TipoAtendimentoCheckout.ComerAqui ? numeroMesa?.Trim() : null,
+            NumeroMesa = null,
             EnderecoEntrega = tipoAtendimento == TipoAtendimentoCheckout.Entrega ? enderecoEntrega : null,
             Observacoes = observacoes,
             Itens = snapshot.Itens
@@ -229,67 +186,7 @@ else
 
         await CarrinhoService.ClearAsync();
         snapshot = await CarrinhoService.GetSnapshotAsync();
-        await ContaMesaEstadoService.AtualizarAsync();
         Navigation.NavigateTo("/meus-pedidos");
-    }
-
-    private async Task<bool> DeveSolicitarPagamentoAntesDoCheckoutAsync()
-    {
-        if (snapshot.EmpresaId <= 0)
-        {
-            return false;
-        }
-
-        var empresa = await ClienteAuthService.GetEmpresaCatalogoAsync(snapshot.EmpresaId);
-        empresaPermitePedirParaMesa = empresa?.HabilitarContasPosPagas ?? true;
-        return empresa?.HabilitarContasPosPagas == false;
-    }
-
-    private async Task AtualizarDisponibilidadePedidoParaMesaAsync()
-    {
-        empresaPermitePedirParaMesa = true;
-
-        if (snapshot.EmpresaId <= 0)
-        {
-            return;
-        }
-
-        var empresa = await ClienteAuthService.GetEmpresaCatalogoAsync(snapshot.EmpresaId);
-        empresaPermitePedirParaMesa = empresa?.HabilitarContasPosPagas ?? true;
-
-        if (!empresaPermitePedirParaMesa && tipoAtendimento == TipoAtendimentoCheckout.ComerAqui)
-        {
-            tipoAtendimento = TipoAtendimentoCheckout.Entrega;
-            numeroMesa = null;
-        }
-    }
-
-    private async Task<bool> SolicitarPagamentoAntesDoCheckoutAsync()
-    {
-        var parameters = new DialogParameters<DialogPagamentoCheckout>
-        {
-            { x => x.EmpresaId, snapshot.EmpresaId },
-            { x => x.Total, snapshot.Subtotal }
-        };
-
-        var options = new DialogOptions
-        {
-            CloseButton = true,
-            MaxWidth = MaxWidth.Small,
-            FullWidth = true
-        };
-
-        var dialog = await DialogService.ShowAsync<DialogPagamentoCheckout>("Formas de pagamento", parameters, options);
-        var result = await dialog.Result;
-
-        if (result is not null && !result.Canceled)
-        {
-            return true;
-        }
-
-        mensagemSeverity = Severity.Info;
-        mensagem = "Pagamento não concluído. O pedido foi mantido no carrinho.";
-        return false;
     }
 
     private void IrParaHome()
@@ -299,29 +196,13 @@ else
 
     private Task AoAlterarTipoAtendimento(TipoAtendimentoCheckout novoTipo)
     {
-        if (novoTipo == TipoAtendimentoCheckout.ComerAqui && !empresaPermitePedirParaMesa)
-        {
-            mensagemSeverity = Severity.Warning;
-            mensagem = "Esta empresa não disponibiliza pedido para mesa no checkout.";
-            tipoAtendimento = TipoAtendimentoCheckout.Entrega;
-            numeroMesa = null;
-            return Task.CompletedTask;
-        }
-
         tipoAtendimento = novoTipo;
-
-        if (novoTipo == TipoAtendimentoCheckout.ComerAqui)
-        {
-            numeroMesa = ContaMesaEstadoService.ContaAbertaAtual?.NumeroMesa;
-        }
-
         return Task.CompletedTask;
     }
 
     private enum TipoAtendimentoCheckout
     {
         Entrega,
-        Retirada,
-        ComerAqui
+        Retirada
     }
 }
