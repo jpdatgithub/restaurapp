@@ -1,0 +1,113 @@
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using Restaurapp.BlazorServer.Services
+@using Restaurapp.BlazorServer.Models.Dtos
+@inject UserManager<ApplicationUser> UserManager
+@inject ISnackbar Snackbar
+@inject IProvedorDeTenantService ProvedorDeTenant
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="@_success">
+            <MudTextField @bind-Value="_model.Email" Label="Email" Required="true" RequiredError="Email é obrigatório"
+                          Validation="@(new EmailAddressAttribute() { ErrorMessage = "Email inválido" })" />
+
+            <MudTextField Value="@Usuario.EmpresaId.ToString()" Label="ID da Empresa" Disabled="true" Class="mt-3" />
+
+            <MudTextField @bind-Value="_model.NovaSenha" Label="Nova Senha (deixe em branco para não alterar)"
+                          InputType="InputType.Password" Class="mt-3" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit" Disabled="@(!_success)">Salvar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public UsuarioDto Usuario { get; set; } = null!;
+
+    private MudForm _form = null!;
+    private bool _success;
+    private UpdateUsuarioModel _model = new();
+
+    protected override void OnInitialized()
+    {
+        _model.Email = Usuario.Email;
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task Submit()
+    {
+        await _form.ValidateAsync();
+
+        if (_form.IsValid)
+        {
+            try
+            {
+                var usuario = await UserManager.FindByIdAsync(Usuario.Id);
+                if (usuario == null)
+                {
+                    Snackbar.Add("Usuário não encontrado", Severity.Error);
+                    return;
+                }
+
+                // VALIDAÇÃO DE SEGURANÇA: Verifica se o usuário pertence ao mesmo escritório
+                var empresaIdAtual = ProvedorDeTenant.EmpresaId;
+                if (usuario.EmpresaId != empresaIdAtual)
+                {
+                    Snackbar.Add("Você não tem permissão para editar este usuário", Severity.Error);
+                    return;
+                }
+
+                usuario.Email = _model.Email;
+                usuario.UserName = _model.Email;
+                // EmpresaId NÃO pode ser alterado
+
+                var result = await UserManager.UpdateAsync(usuario);
+
+                if (result.Succeeded)
+                {
+                    // Atualiza senha se fornecida
+                    if (!string.IsNullOrEmpty(_model.NovaSenha))
+                    {
+                        var token = await UserManager.GeneratePasswordResetTokenAsync(usuario);
+                        var passwordResult = await UserManager.ResetPasswordAsync(usuario, token, _model.NovaSenha);
+
+                        if (!passwordResult.Succeeded)
+                        {
+                            Snackbar.Add($"Erro ao atualizar senha: {string.Join(", ", passwordResult.Errors.Select(e => e.Description))}",
+                            Severity.Error);
+                            return;
+                        }
+                    }
+
+                    Snackbar.Add("Usuário atualizado com sucesso", Severity.Success);
+                    MudDialog.Close(DialogResult.Ok(true));
+                }
+                else
+                {
+                    Snackbar.Add($"Erro ao atualizar usuário: {string.Join(", ", result.Errors.Select(e => e.Description))}",
+                    Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Erro: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    public class UpdateUsuarioModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string? NovaSenha { get; set; }
+    }
+
+}

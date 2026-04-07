@@ -1,0 +1,39 @@
+@inject ClienteAuthService AuthService
+
+<CascadingAuthenticationState>
+    @if (!_sessaoInicializada)
+    {
+        <div class="d-flex justify-center align-center" style="min-height:60vh;">
+            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        </div>
+    }
+    else
+    {
+        <Router AppAssembly="@typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+            <Found Context="routeData">
+                <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(Layout.MainLayout)">
+                    <NotAuthorized>
+                        <RedirectToLogin />
+                    </NotAuthorized>
+                </AuthorizeRouteView>
+                <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+            </Found>
+        </Router>
+    }
+</CascadingAuthenticationState>
+
+@code {
+    private bool _sessaoInicializada;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await AuthService.EnsureSessionAsync();
+        }
+        finally
+        {
+            _sessaoInicializada = true;
+        }
+    }
+}

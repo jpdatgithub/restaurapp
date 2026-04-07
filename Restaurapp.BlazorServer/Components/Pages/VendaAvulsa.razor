@@ -1,0 +1,498 @@
+@page "/venda-avulsa"
+@page "/venda-avulsa/{Modo}"
+@using System.Globalization
+@using Restaurapp.BlazorServer.Models
+@using Restaurapp.BlazorServer.Services
+
+@inject ProdutoService ProdutoService
+@inject PedidoService PedidoService
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>@TituloPagina</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" Class="mb-1">@TituloPagina</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">@SubtituloPagina</MudText>
+
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        @if (modoAtual == ModoPedidoRapido.Venda)
+        {
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Destino da venda</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Venda imediata no caixa (sem associação com conta aberta).
+            </MudText>
+        }
+        else if (modoAtual == ModoPedidoRapido.Conta)
+        {
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Destino do pedido em conta</MudText>
+            <MudCheckBox T="bool" @bind-Value="novaConta" Label="Nova conta?" Disabled="pagando" />
+
+            @if (!novaConta)
+            {
+                <MudSelect T="int?" Label="Conta aberta" Variant="Variant.Outlined" Value="contaMesaSelecionadaId"
+                           ValueChanged="OnContaMesaSelecionadaChanged" Disabled="pagando" Class="mt-2">
+                    <MudSelectItem T="int?" Value="@(null)">Selecione uma conta</MudSelectItem>
+                    @foreach (var conta in contasAbertas)
+                    {
+                        <MudSelectItem T="int?" Value="@conta.Id">@ObterDescricaoContaAberta(conta)</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            else
+            {
+                <MudGrid Class="mt-2">
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string" @bind-Value="nomeDonoContaNova" Label="Nome do dono da conta"
+                                      Variant="Variant.Outlined" Disabled="pagando" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string" @bind-Value="numeroMesaContaNova" Label="Número da mesa"
+                                      Variant="Variant.Outlined" Disabled="pagando" />
+                    </MudItem>
+                </MudGrid>
+            }
+        }
+        else
+        {
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Destino do pedido</MudText>
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField T="string" @bind-Value="nomeDonoPedidoEntrega" Label="Nome do dono do pedido"
+                                  Variant="Variant.Outlined" Disabled="pagando" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudSelect T="TipoEntregaRapida" @bind-Value="tipoEntregaRapida" Label="Tipo de pedido"
+                               Variant="Variant.Outlined" Disabled="pagando">
+                        <MudSelectItem T="TipoEntregaRapida" Value="@TipoEntregaRapida.Entrega">Entrega</MudSelectItem>
+                        <MudSelectItem T="TipoEntregaRapida" Value="@TipoEntregaRapida.Takeaway">Takeaway (retirada)
+                        </MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                @if (tipoEntregaRapida == TipoEntregaRapida.Entrega)
+                {
+                    <MudItem xs="12">
+                        <MudTextField T="string" @bind-Value="enderecoPedidoEntrega" Label="Endereço" Variant="Variant.Outlined"
+                                      Disabled="pagando" Required="true" />
+                    </MudItem>
+                }
+            </MudGrid>
+        }
+    </MudPaper>
+
+    <MudGrid>
+        <MudItem xs="12" lg="8">
+            <MudTextField T="string" @bind-Value="FiltroNome" Label="Filtrar itens por nome" Variant="Variant.Outlined"
+                          Immediate="true" Class="mb-3" />
+
+            @if (!secoesFiltradas.Any())
+            {
+                <MudText Typo="Typo.body2">Nenhum item encontrado para o filtro informado.</MudText>
+            }
+            else
+            {
+                @foreach (var secao in secoesFiltradas)
+                {
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.h6" Class="mb-2">@secao</MudText>
+
+                    <div style="display:flex;flex-wrap:wrap;gap:12px;">
+                        @foreach (var produto in produtosPorSecaoFiltrado[secao])
+                        {
+                            <MudCard Elevation="1" Style="width:250px;cursor:pointer;"
+                                     @onclick="() => AdicionarAoCarrinho(produto)">
+                                <MudCardContent>
+                                    <div
+                                        style="height:90px;border:1px dashed rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;border-radius:6px;margin-bottom:8px;">
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Imagem (placeholder)</MudText>
+                                    </div>
+
+                                    <MudText Typo="Typo.subtitle1">@produto.Nome</MudText>
+                                    <MudText Typo="Typo.body2" Color="Color.Primary">@produto.Preco.ToString("C2", culturaPtBr)
+                                    </MudText>
+                                    <MudText Typo="Typo.caption">@(string.IsNullOrWhiteSpace(produto.Descricao) ? "Sem descrição" :
+                                                                                                            produto.Descricao)</MudText>
+                                    </MudCardContent>
+                                </MudCard>
+                            }
+                        </div>
+                    }
+                }
+            </MudItem>
+
+            <MudItem xs="12" lg="4">
+                <MudPaper Class="pa-4" Elevation="1">
+                    <MudText Typo="Typo.h6">Carrinho</MudText>
+
+                    @if (!itensCarrinho.Any())
+                    {
+                        <MudText Typo="Typo.body2" Class="mt-2">Nenhum item adicionado.</MudText>
+                    }
+                    else
+                    {
+                        <MudTable Items="itensCarrinho" Dense="true" Hover="true" Class="mt-2">
+                            <HeaderContent>
+                                <MudTh>Item</MudTh>
+                                <MudTh>Qtd</MudTh>
+                                <MudTh style="text-align:right;">Subtotal</MudTh>
+                                <MudTh></MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Item">@context.Nome</MudTd>
+                                <MudTd DataLabel="Qtd">
+                                    <MudNumericField T="int" Value="@context.Quantidade"
+                                                     ValueChanged="q => AtualizarQuantidade(context.ProdutoId, q)" Min="1" Max="999"
+                                                     Immediate="true" Style="width:80px;" />
+                                </MudTd>
+                                <MudTd DataLabel="Subtotal" style="text-align:right;">@context.Subtotal.ToString("C2",
+                                                                                                    culturaPtBr)</MudTd>
+                                    <MudTd>
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                                       OnClick="() => RemoverDoCarrinho(context.ProdutoId)" />
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        }
+
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.h6" Align="Align.Right">Total: @TotalCarrinho.ToString("C2", culturaPtBr)</MudText>
+
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" FullWidth="true" Class="mt-3"
+                                   Disabled="@(!itensCarrinho.Any() || pagando)" OnClick="ProcessarOperacaoAsync">
+                            @(pagando ? "Processando..." : TextoBotaoAcao)
+                        </MudButton>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        </MudContainer>
+
+@code {
+    [Parameter]
+    public string? Modo { get; set; }
+
+    private static readonly CultureInfo culturaPtBr = CultureInfo.GetCultureInfo("pt-BR");
+
+    private List<Produto> produtos = new();
+    private string filtroNome = string.Empty;
+    private Dictionary<string, List<Produto>> produtosPorSecaoFiltrado = new(StringComparer.OrdinalIgnoreCase);
+    private List<string> secoesFiltradas = new();
+    private List<ContaMesa> contasAbertas = new();
+    private int? contaMesaSelecionadaId;
+    private bool pagando;
+
+    private ModoPedidoRapido modoAtual = ModoPedidoRapido.Venda;
+    private bool novaConta;
+    private string nomeDonoContaNova = string.Empty;
+    private string numeroMesaContaNova = string.Empty;
+    private string nomeDonoPedidoEntrega = string.Empty;
+    private string enderecoPedidoEntrega = string.Empty;
+    private TipoEntregaRapida tipoEntregaRapida = TipoEntregaRapida.Entrega;
+
+    private readonly List<ItemCarrinhoVendaAvulsa> itensCarrinho = new();
+
+    private decimal TotalCarrinho => itensCarrinho.Sum(i => i.Subtotal);
+
+    private string TituloPagina => modoAtual switch
+    {
+        ModoPedidoRapido.Conta => "Pedir para Conta",
+        ModoPedidoRapido.EntregaTakeaway => "Pedir Entrega/Takeaway",
+        _ => "Venda Avulsa"
+    };
+
+    private string SubtituloPagina => modoAtual switch
+    {
+        ModoPedidoRapido.Conta => "Registre um novo pedido para uma conta aberta ou abra uma nova conta.",
+        ModoPedidoRapido.EntregaTakeaway => "Registre um pedido de entrega ou takeaway para entrar na fila do servidor.",
+        _ => "Registre vendas rápidas no caixa."
+    };
+
+    private string TextoBotaoAcao => modoAtual switch
+    {
+        ModoPedidoRapido.Conta => "Registrar pedido para conta",
+        ModoPedidoRapido.EntregaTakeaway => "Registrar pedido",
+        _ => "Pagar"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        produtos = await ProdutoService.ObterProdutosAsync();
+        contasAbertas = await PedidoService.ObterMesasEmAbertoAsync();
+        RecalcularCatalogoFiltrado();
+    }
+
+    protected override void OnParametersSet()
+    {
+        modoAtual = ResolverModo(Modo);
+    }
+
+    private static ModoPedidoRapido ResolverModo(string? modo)
+    {
+        var valor = modo?.Trim().ToLowerInvariant();
+        return valor switch
+        {
+            "conta" => ModoPedidoRapido.Conta,
+            "entrega" => ModoPedidoRapido.EntregaTakeaway,
+            "entrega-takeaway" => ModoPedidoRapido.EntregaTakeaway,
+            _ => ModoPedidoRapido.Venda
+        };
+    }
+
+    private void RecalcularCatalogoFiltrado()
+    {
+        var query = produtos.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(filtroNome))
+        {
+            var termo = filtroNome.Trim();
+            query = query.Where(p => p.Nome.Contains(termo, StringComparison.OrdinalIgnoreCase));
+        }
+
+        produtosPorSecaoFiltrado = query
+            .GroupBy(p => string.IsNullOrWhiteSpace(p.Secao) ? "Sem seção" : p.Secao.Trim())
+            .OrderBy(g => g.Key)
+            .ToDictionary(g => g.Key, g => g.OrderBy(p => p.Nome).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        secoesFiltradas = produtosPorSecaoFiltrado.Keys.ToList();
+    }
+
+    private void AdicionarAoCarrinho(Produto produto)
+    {
+        var existente = itensCarrinho.FirstOrDefault(i => i.ProdutoId == produto.Id);
+        if (existente is not null)
+        {
+            existente.Quantidade += 1;
+            return;
+        }
+
+        itensCarrinho.Add(new ItemCarrinhoVendaAvulsa
+        {
+            ProdutoId = produto.Id,
+            Nome = produto.Nome,
+            PrecoUnitario = produto.Preco,
+            Quantidade = 1
+        });
+    }
+
+    private void RemoverDoCarrinho(int produtoId)
+    {
+        itensCarrinho.RemoveAll(i => i.ProdutoId == produtoId);
+    }
+
+    private void AtualizarQuantidade(int produtoId, int quantidade)
+    {
+        if (quantidade <= 0)
+        {
+            RemoverDoCarrinho(produtoId);
+            return;
+        }
+
+        var item = itensCarrinho.FirstOrDefault(i => i.ProdutoId == produtoId);
+        if (item is null)
+        {
+            return;
+        }
+
+        item.Quantidade = quantidade;
+    }
+
+    private async Task ProcessarOperacaoAsync()
+    {
+        if (!itensCarrinho.Any())
+        {
+            return;
+        }
+
+        pagando = true;
+
+        try
+        {
+            if (modoAtual == ModoPedidoRapido.Venda)
+            {
+                await ProcessarVendaAvulsaAsync();
+                return;
+            }
+
+            if (modoAtual == ModoPedidoRapido.Conta)
+            {
+                await ProcessarPedidoContaAsync();
+                return;
+            }
+
+            await ProcessarPedidoEntregaTakeawayAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao registrar operação: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            pagando = false;
+        }
+    }
+
+    private async Task ProcessarVendaAvulsaAsync()
+    {
+        var pedido = await PedidoService.RegistrarVendaAvulsaAsync(itensCarrinho
+            .Select(i => new PedidoService.VendaAvulsaItemInput(i.ProdutoId, i.Quantidade))
+            .ToList());
+
+        if (pedido is null)
+        {
+            Snackbar.Add("Não foi possível registrar a venda avulsa.", Severity.Error);
+            return;
+        }
+
+        Snackbar.Add($"Venda avulsa registrada no pedido #{pedido.Id}.", Severity.Success);
+
+        itensCarrinho.Clear();
+        Navigation.NavigateTo("/");
+    }
+
+    private async Task ProcessarPedidoContaAsync()
+    {
+        if (!novaConta && !contaMesaSelecionadaId.HasValue)
+        {
+            Snackbar.Add("Selecione uma conta aberta ou marque Nova conta.", Severity.Warning);
+            return;
+        }
+
+        if (novaConta && (string.IsNullOrWhiteSpace(nomeDonoContaNova) || string.IsNullOrWhiteSpace(numeroMesaContaNova)))
+        {
+            Snackbar.Add("Informe o nome do dono da conta e o número da mesa para abrir uma nova conta.", Severity.Warning);
+            return;
+        }
+
+        var contaSelecionada = !novaConta && contaMesaSelecionadaId.HasValue
+            ? contasAbertas.FirstOrDefault(c => c.Id == contaMesaSelecionadaId.Value)
+            : null;
+
+        var pedido = await PedidoService.RegistrarPedidoRapidoAsync(
+            itensCarrinho.Select(i => new PedidoService.VendaAvulsaItemInput(i.ProdutoId, i.Quantidade)).ToList(),
+            TipoAtendimentoPedido.ComerAqui,
+            novaConta ? nomeDonoContaNova : ObterNomeDonoConta(contaSelecionada) ?? "Pedido em conta",
+            takeaway: false,
+            contaMesaId: contaMesaSelecionadaId,
+            criarNovaConta: novaConta,
+            numeroMesaNovaConta: novaConta ? numeroMesaContaNova : null);
+
+        if (pedido is null)
+        {
+            Snackbar.Add("Não foi possível registrar o pedido para conta.", Severity.Error);
+            return;
+        }
+
+        if (novaConta)
+        {
+            Snackbar.Add($"Pedido #{pedido.Id} registrado para a mesa {pedido.NumeroMesa ?? numeroMesaContaNova.Trim()}.",
+Severity.Success);
+        }
+        else
+        {
+            var descricaoConta = contaSelecionada is null
+                ? $"conta #{contaMesaSelecionadaId!.Value}"
+                : ObterDescricaoContaAberta(contaSelecionada).ToLowerInvariant();
+
+            Snackbar.Add($"Pedido #{pedido.Id} registrado na {descricaoConta}.", Severity.Success);
+        }
+
+        itensCarrinho.Clear();
+        nomeDonoContaNova = string.Empty;
+        numeroMesaContaNova = string.Empty;
+        Navigation.NavigateTo("/");
+    }
+
+    private async Task ProcessarPedidoEntregaTakeawayAsync()
+    {
+        if (string.IsNullOrWhiteSpace(nomeDonoPedidoEntrega))
+        {
+            Snackbar.Add("Informe o nome do dono do pedido.", Severity.Warning);
+            return;
+        }
+
+        var takeaway = tipoEntregaRapida == TipoEntregaRapida.Takeaway;
+        var tipoAtendimento = takeaway ? TipoAtendimentoPedido.Retirada : TipoAtendimentoPedido.Entrega;
+
+        if (!takeaway && string.IsNullOrWhiteSpace(enderecoPedidoEntrega))
+        {
+            Snackbar.Add("Informe o endereço para pedidos de entrega.", Severity.Warning);
+            return;
+        }
+
+        var pedido = await PedidoService.RegistrarPedidoRapidoAsync(
+            itensCarrinho.Select(i => new PedidoService.VendaAvulsaItemInput(i.ProdutoId, i.Quantidade)).ToList(),
+            tipoAtendimento,
+            nomeDonoPedidoEntrega,
+            takeaway: takeaway,
+            enderecoEntrega: takeaway ? null : enderecoPedidoEntrega);
+
+        if (pedido is null)
+        {
+            Snackbar.Add("Não foi possível registrar o pedido de entrega/takeaway.", Severity.Error);
+            return;
+        }
+
+        Snackbar.Add($"Pedido #{pedido.Id} registrado com sucesso na fila do servidor.", Severity.Success);
+
+        itensCarrinho.Clear();
+        nomeDonoPedidoEntrega = string.Empty;
+        enderecoPedidoEntrega = string.Empty;
+        Navigation.NavigateTo("/");
+    }
+
+    private Task OnContaMesaSelecionadaChanged(int? value)
+    {
+        contaMesaSelecionadaId = value;
+        return Task.CompletedTask;
+    }
+
+    private static string ObterDescricaoContaAberta(ContaMesa conta)
+    {
+        var nome = ObterNomeDonoConta(conta);
+        return string.IsNullOrWhiteSpace(nome)
+            ? $"Conta #{conta.Id} - Mesa {conta.NumeroMesa}"
+            : $"Conta de {nome} - Mesa {conta.NumeroMesa}";
+    }
+
+    private static string? ObterNomeDonoConta(ContaMesa? conta)
+    {
+        return conta?.Pedidos
+            .Where(p => p.Status != StatusPedido.Cancelado
+                && !string.IsNullOrWhiteSpace(p.NomeClienteSnapshot)
+                && !string.Equals(p.NomeClienteSnapshot, "Pedido em conta", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(p.NomeClienteSnapshot, "Venda avulsa", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(p => p.CreatedAtUtc)
+            .Select(p => p.NomeClienteSnapshot.Trim())
+            .FirstOrDefault();
+    }
+
+    private sealed class ItemCarrinhoVendaAvulsa
+    {
+        public int ProdutoId { get; set; }
+        public string Nome { get; set; } = string.Empty;
+        public decimal PrecoUnitario { get; set; }
+        public int Quantidade { get; set; }
+        public decimal Subtotal => PrecoUnitario * Quantidade;
+    }
+
+    private string FiltroNome
+    {
+        get => filtroNome;
+        set
+        {
+            filtroNome = value;
+            RecalcularCatalogoFiltrado();
+        }
+    }
+
+    private enum ModoPedidoRapido
+    {
+        Venda,
+        Conta,
+        EntregaTakeaway
+    }
+
+    private enum TipoEntregaRapida
+    {
+        Entrega,
+        Takeaway
+    }
+}

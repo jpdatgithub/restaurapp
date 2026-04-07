@@ -1,0 +1,125 @@
+name: PR Deploy ClientWasm
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Ambiente de deploy
+        required: true
+        type: choice
+        options:
+          - staging
+          - prod
+        default: staging
+  pull_request:
+    branches:
+      - deploy/staging
+      - deploy/prod
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: client-deploy-${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: 10.0.x
+  CLIENT_PROJECT_PATH: Restaurapp.ClienteWasm.csproj
+
+jobs:
+  build:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false }}
+    runs-on: [self-hosted, Linux, X64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore ${{ env.CLIENT_PROJECT_PATH }}
+
+      - name: Build
+        run: dotnet build ${{ env.CLIENT_PROJECT_PATH }} --configuration Release --no-restore
+
+      - name: Publish
+        run: dotnet publish ${{ env.CLIENT_PROJECT_PATH }} --configuration Release --no-build --output ./publish
+
+      - name: Pack artifact
+        run: tar -czf client-${{ github.sha }}.tar.gz -C ./publish .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-artifact
+          path: client-${{ github.sha }}.tar.gz
+          retention-days: 7
+
+  deploy:
+    needs: build
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: [self-hosted, Linux, X64]
+    environment: ${{ ((github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'deploy/prod') || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'prod')) && 'production' || 'staging' }}
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: client-artifact
+
+      - name: Resolve target path
+        id: vars
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TARGET_REF="${{ github.event.pull_request.base.ref }}"
+          elif [[ "${{ github.event.inputs.target }}" == "prod" ]]; then
+            TARGET_REF="deploy/prod"
+          else
+            TARGET_REF="deploy/staging"
+          fi
+
+          if [[ "$TARGET_REF" == "deploy/prod" ]]; then
+            RAW_DEPLOY_PATH="${{ vars.CLIENT_PROD_PATH }}"
+            DEFAULT_DEPLOY_PATH='/var/www/restaurapp/production/client'
+          else
+            RAW_DEPLOY_PATH="${{ vars.CLIENT_STAGING_PATH }}"
+            DEFAULT_DEPLOY_PATH='/var/www/restaurapp/staging/client'
+          fi
+
+          if [[ -z "$RAW_DEPLOY_PATH" || "$RAW_DEPLOY_PATH" == *minhaempresa* ]]; then
+            DEPLOY_PATH="$DEFAULT_DEPLOY_PATH"
+          else
+            DEPLOY_PATH="$RAW_DEPLOY_PATH"
+          fi
+
+          echo "DEPLOY_PATH=$DEPLOY_PATH" >> $GITHUB_OUTPUT
+
+      - name: Deploy local
+        shell: bash
+        run: |
+          set -euo pipefail
+          /opt/restaurapp/scripts/deploy-client.sh \
+            '${{ steps.vars.outputs.DEPLOY_PATH }}' \
+            '${{ github.sha }}' \
+            "${PWD}/client-${{ github.sha }}.tar.gz"
+
+      - name: Nginx diagnostics on failure
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set +e
+          sudo systemctl status nginx --no-pager || true
+          sudo journalctl -u nginx -n 200 --no-pager || true

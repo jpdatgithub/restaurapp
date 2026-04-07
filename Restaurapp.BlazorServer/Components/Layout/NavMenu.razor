@@ -1,0 +1,57 @@
+﻿@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<MudNavMenu>
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
+    <MudNavLink Href="pedidos" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AttachMoney">Pedidos
+    </MudNavLink>
+    <MudNavLink Href="mesas" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.TableRestaurant">Mesas e Contas
+    </MudNavLink>
+    <MudNavLink Href="cardapio" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.MenuBook">Cardápio
+    </MudNavLink>
+    <MudNavLink Href="caixa-registradora" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ReceiptLong">Caixa
+        Registradora
+    </MudNavLink>
+    <MudNavLink Href="profile" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Person">Perfil
+    </MudNavLink>
+
+    <AuthorizeView Roles="Admin">
+        <MudDivider Class="my-2" />
+        <MudNavLink Href="admin" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AdminPanelSettings">Minha
+            empresa</MudNavLink>
+        </AuthorizeView>
+
+        <MudDivider Class="my-2" />
+
+        <MudButton StartIcon="@Icons.Material.Filled.Logout" OnClick="HandleLogout" FullWidth="true" Color="Color.Default"
+                   Class="justify-start pl-4" Style="text-transform: none;">
+            Sair
+        </MudButton>
+
+    </MudNavMenu>
+
+@code {
+    private async Task HandleLogout()
+    {
+        await JSRuntime.InvokeVoidAsync("logoutUser");
+    }
+}
+
+<script>
+    window.logoutUser = async function () {
+        try {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                credentials: 'include'
+            });
+            window.location.href = '/login';
+        } catch (error) {
+            console.error('Logout error:', error);
+            window.location.href = '/login';
+        }
+    };
+</script>

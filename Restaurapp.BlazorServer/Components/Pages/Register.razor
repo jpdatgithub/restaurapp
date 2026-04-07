@@ -1,0 +1,237 @@
+@page "/register"
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using Restaurapp.BlazorServer.Data
+@using Restaurapp.BlazorServer.Models
+@using Restaurapp.BlazorServer.Services
+
+@attribute [AllowAnonymous]
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+@inject IMagicRegisterLinkService RegisterLinkService
+@inject AppDbContext DbContext
+@inject ISnackbar Snackbar
+
+<PageTitle>Registro de Escritório</PageTitle>
+
+<div class="register-container">
+    <MudCard Class="mt-16 register-card" Style="max-width: 500px; margin: auto;">
+        <MudCardHeader Class="d-flex justify-center">
+            <h2>Registrar Escritório</h2>
+        </MudCardHeader>
+
+        <MudCardContent>
+            @if (_loading)
+            {
+                <div class="d-flex justify-center align-center" style="min-height: 200px;">
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                </div>
+                <MudText Align="Align.Center" Class="mt-3">Validando token...</MudText>
+            }
+            else if (!_tokenValid)
+            {
+                <MudAlert Severity="Severity.Error">
+                    Link inválido ou expirado. Entre em contato com o administrador para obter um novo link.
+                </MudAlert>
+                <MudButton Href="/login" Variant="Variant.Filled" Color="Color.Primary" FullWidth Class="mt-4">
+                    Ir para Login
+                </MudButton>
+            }
+            else if (!_registrationComplete)
+            {
+                <MudForm @ref="_form" @bind-IsValid="@_success">
+                    @if (_existingEmpresa != null)
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mb-3">
+                            Você está criando um usuário para o escritório: <strong>@_existingEmpresa.Nome</strong>
+                        </MudAlert>
+                        <MudTextField @bind-Value="_model.NomeEscritorio" Label="Nome do Escritório" 
+                                      Disabled="true" Class="mb-3" />
+                    }
+                    else
+                    {
+                        <MudTextField @bind-Value="_model.NomeEscritorio" Label="Nome do Escritório" Required="true" 
+                                      RequiredError="Nome do escritório é obrigatório" Class="mb-3" />
+                    }
+
+                    <MudDivider Class="my-4" />
+
+                    <MudText Typo="Typo.h6" Class="mb-3">Dados do Administrador</MudText>
+
+                    <MudTextField @bind-Value="_model.Email" Label="Email" Required="true" 
+                                  RequiredError="Email é obrigatório" 
+                                  Validation="@(new EmailAddressAttribute() { ErrorMessage = "Email inválido" })" 
+                                  Class="mb-3" />
+
+                    <MudTextField @bind-Value="_model.Senha" Label="Senha" InputType="InputType.Password" 
+                                  Required="true" RequiredError="Senha é obrigatória" Class="mb-3" />
+
+                    <MudTextField @bind-Value="_model.ConfirmarSenha" Label="Confirmar Senha" InputType="InputType.Password" 
+                                  Required="true" RequiredError="Confirmação de senha é obrigatória" Class="mb-3" />
+
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth 
+                               OnClick="HandleRegister" Disabled="@(!_success || _registering)" Class="mt-3" Size="Size.Large">
+                        @(_registering ? "Registrando..." : "Registrar")
+                    </MudButton>
+                </MudForm>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Success">
+                    <MudText Typo="Typo.h6">Registro realizado com sucesso!</MudText>
+                    <MudText Class="mt-2">Redirecionando para o login...</MudText>
+                </MudAlert>
+            }
+        </MudCardContent>
+    </MudCard>
+</div>
+
+@code {
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "token")]
+    public string? Token { get; set; }
+    private MudForm _form = null!;
+    private bool _success;
+    private bool _loading = true;
+    private bool _tokenValid = false;
+    private bool _registering = false;
+    private bool _registrationComplete = false;
+    private RegisterModel _model = new();
+    private Empresa? _existingEmpresa = null;
+    private int? _tokenEmpresaId = null;
+    private string _roleToRegister = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (string.IsNullOrEmpty(Token))
+        {
+            _loading = false;
+            _tokenValid = false;
+            return;
+        }
+
+        _tokenValid = await RegisterLinkService.ValidateRegisterTokenAsync(Token);
+        
+        if (_tokenValid)
+        {
+            // Busca o empresaId do token
+            _tokenEmpresaId = await RegisterLinkService.GetEmpresaIdFromTokenAsync(Token);
+            
+            if (_tokenEmpresaId.HasValue)
+            {
+                // Se o token tem empresaId, busca a empresa
+                _existingEmpresa = await DbContext.Empresas
+                    .FirstOrDefaultAsync(e => e.Id == _tokenEmpresaId.Value);
+                
+                if (_existingEmpresa != null)
+                {
+                    _model.NomeEscritorio = _existingEmpresa.Nome;
+                }
+            }
+        }
+
+        _roleToRegister = await RegisterLinkService.GetRoleToRegisterFromTokenAsync(Token);
+        
+        _loading = false;
+    }
+
+    private async Task HandleRegister()
+    {
+        await _form.ValidateAsync();
+
+        if (!_form.IsValid)
+            return;
+
+        if (_model.Senha != _model.ConfirmarSenha)
+        {
+            Snackbar.Add("As senhas não coincidem", Severity.Error);
+            return;
+        }
+
+        _registering = true;
+
+        try
+        {
+            Empresa escritorio;
+            
+            // Se já existe um escritório associado ao token, usa ele
+            if (_existingEmpresa != null)
+            {
+                escritorio = _existingEmpresa;
+            }
+            else
+            {
+                // Caso contrário, cria um novo escritório
+                escritorio = new Empresa
+                {
+                    Nome = _model.NomeEscritorio
+                };
+
+                DbContext.Empresas.Add(escritorio);
+                await DbContext.SaveChangesAsync();
+            }
+
+            // 2. Criar Usuário
+            var newUser = new ApplicationUser
+            {
+                UserName = _model.Email,
+                Email = _model.Email,
+                EmailConfirmed = true,
+                EmpresaId = escritorio.Id
+            };
+
+            try {
+                var result = await UserManager.CreateAsync(newUser, _model.Senha);
+
+                if (!result.Succeeded)
+                {
+                    Snackbar.Add($"Erro ao criar usuário: {string.Join(", ", result.Errors.Select(e => e.Description))}", Severity.Error);
+                    DbContext.Empresas.Remove(escritorio);
+                    await DbContext.SaveChangesAsync();
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Erro ao criar usuário: {ex.Message}", Severity.Error);
+                DbContext.Empresas.Remove(escritorio);
+                await DbContext.SaveChangesAsync();
+                return;
+            }
+
+            // 3. Adicionar role 
+            await UserManager.AddToRoleAsync(newUser, _roleToRegister);
+
+            await UserManager.AddClaimAsync(newUser, new Claim("EmpresaId", escritorio.Id.ToString()));
+
+            // 4. Marcar token como usado
+            await RegisterLinkService.MarkTokenAsUsedAsync(Token!);
+
+            _registrationComplete = true;
+            Snackbar.Add("Escritório registrado com sucesso!", Severity.Success);
+
+            await Task.Delay(2000);
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao processar registro: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _registering = false;
+        }
+    }
+
+    public class RegisterModel
+    {
+        public string NomeEscritorio { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Senha { get; set; } = string.Empty;
+        public string ConfirmarSenha { get; set; } = string.Empty;
+    }
+}

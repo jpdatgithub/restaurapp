@@ -1,0 +1,475 @@
+@page "/meus-pedidos"
+@implements IAsyncDisposable
+@using System.Globalization
+
+@inject PedidosService PedidosService
+@inject ClienteAuthService AuthService
+@inject ServicoTempoRealPedidosCliente ServicoTempoRealPedidosCliente
+@inject ISnackbar Snackbar
+
+<PageTitle>Meus Pedidos</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" Class="mb-4">Meus Pedidos</MudText>
+
+    @if (!string.IsNullOrWhiteSpace(avisoTempoReal) && string.IsNullOrWhiteSpace(erro))
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">@avisoTempoReal</MudAlert>
+    }
+
+    @if (carregando)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+    }
+    else if (!string.IsNullOrWhiteSpace(erro))
+    {
+        <MudAlert Severity="Severity.Error">@erro</MudAlert>
+    }
+    else
+    {
+        <MudHidden Breakpoint="Breakpoint.SmAndDown">
+            <MudTabs Elevation="0" Rounded="true" @bind-ActivePanelIndex="abaAtiva">
+                <MudTabPanel Text="Em andamento" Icon="@Icons.Material.Filled.Schedule" />
+                <MudTabPanel Text="Todos os pedidos" Icon="@Icons.Material.Filled.ListAlt" />
+                <MudTabPanel Text="Detalhes" Icon="@Icons.Material.Filled.Info" Disabled="@(pedidoSelecionado is null)" />
+            </MudTabs>
+        </MudHidden>
+
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <MudPaper Elevation="8" Class="pa-0" Style="position:fixed;left:0;right:0;bottom:0;z-index:1200;">
+                <MudTabs Elevation="0" Rounded="false" Position="Position.Bottom" MinimumTabWidth="20px" Centered="true"
+                         @bind-ActivePanelIndex="abaAtiva">
+                    <MudTabPanel Icon="@Icons.Material.Filled.Schedule" />
+                    <MudTabPanel Icon="@Icons.Material.Filled.ListAlt" />
+                    <MudTabPanel Icon="@Icons.Material.Filled.Info" Disabled="@(pedidoSelecionado is null)" />
+                </MudTabs>
+            </MudPaper>
+        </MudHidden>
+
+        @if (abaAtiva == 0)
+        {
+            @if (!pedidosEmAndamento.Any())
+            {
+                <MudText Typo="Typo.body1" Class="mt-3">Nenhum pedido em andamento.</MudText>
+            }
+            else
+            {
+                <MudGrid Class="mt-3 mb-2">
+                    @foreach (var pedidoAndamento in pedidosEmAndamento)
+                    {
+                        <MudItem xs="12" md="6" lg="4">
+                            <MudCard Elevation="0">
+                                <MudCardContent>
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                        <MudText Typo="Typo.subtitle1">Pedido #@pedidoAndamento.Id</MudText>
+                                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">
+                                            @FormatarStatus(pedidoAndamento.Status)
+                                        </MudChip>
+                                    </MudStack>
+
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">Empresa:
+                                        @pedidoAndamento.EmpresaNome</MudText>
+                                        <MudText Typo="Typo.body2">Tipo: @ObterDescricaoTipoAtendimento(pedidoAndamento)</MudText>
+                                        <MudText Typo="Typo.body2">Total: @pedidoAndamento.Total.ToString("C", culturaPtBr)</MudText>
+
+                                        <MudAlert Severity="@ObterSeveridadeProximoPassoCliente(pedidoAndamento.Status)" Dense="true"
+                                                  Class="mt-2 mb-2">
+                                            <strong>Próximo passo:</strong> @ObterProximoPassoTextoCliente(pedidoAndamento)
+                                        </MudAlert>
+
+                                        <MudDivider Class="my-2" />
+                                        <div class="mb-1" style="text-align: center;">
+                                            <MudText Typo="Typo.subtitle2" Class="mb-1">Linha do tempo</MudText>
+                                            @foreach (var statusFluxo in fluxoStatus)
+                                            {
+                                                var dataStatus = ObterDataStatus(pedidoAndamento, statusFluxo);
+                                                <MudText Typo="Typo.caption" Color="@(dataStatus.HasValue? Color.Success: Color.Default)">
+                                                    • @FormatarStatus(statusFluxo) @(dataStatus.HasValue ? $"às                     {dataStatus.Value.ToLocalTime():dd/MM HH:mm}" : "")
+                                                </MudText>
+                                            }
+                                        </div>
+
+                                        <MudStack AlignItems="AlignItems.Center" Spacing="1" Class="mt-3">
+                                            <MudStack Row="true" Spacing="1" Justify="Justify.Center">
+                                                <MudTooltip Text="Disponível somente quando o pedido estiver Enviado">
+                                                    <MudButton Variant="Variant.Filled" Color="Color.Success"
+                                                               Disabled="@(pedidoAndamento.Status != StatusPedido.Enviado)"
+                                                               OnClick="() => ConfirmarEntregaAsync(pedidoAndamento.Id)">
+                                                        Confirmar entrega
+                                                    </MudButton>
+                                                </MudTooltip>
+                                            </MudStack>
+
+                                            <MudButton Variant="Variant.Text" Size="Size.Small"
+                                                       OnClick="() => SelecionarPedidoAsync(pedidoAndamento.Id)">
+                                                Ver detalhes
+                                            </MudButton>
+                                        </MudStack>
+                                    </MudCardContent>
+                                </MudCard>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                }
+            }
+        else if (abaAtiva == 1)
+            {
+                @if (!pedidos.Any())
+                {
+                    <MudText Typo="Typo.body1" Class="mt-3">Você ainda não possui pedidos.</MudText>
+                }
+                else
+                {
+                    <MudTable Items="pedidos" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm" Class="mt-3">
+                        <HeaderContent>
+                            <MudTh>Pedido</MudTh>
+                            <MudTh>Empresa</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh>Itens</MudTh>
+                            <MudTh>Total</MudTh>
+                            <MudTh>Data</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Pedido">#@context.Id</MudTd>
+                            <MudTd DataLabel="Empresa">@context.EmpresaNome</MudTd>
+                            <MudTd DataLabel="Status">@FormatarStatusParaExibicao(context)</MudTd>
+                            <MudTd DataLabel="Tipo">@ObterDescricaoTipoAtendimento(context)</MudTd>
+                            <MudTd DataLabel="Itens">@context.QuantidadeItens</MudTd>
+                            <MudTd DataLabel="Total">@context.Total.ToString("C", culturaPtBr)</MudTd>
+                            <MudTd DataLabel="Data">@context.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudTd>
+                            <MudTd DataLabel="Ações">
+                                <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="() => SelecionarPedidoAsync(context.Id)">
+                                    Ver detalhes
+                                </MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            }
+            else
+            {
+                @if (pedidoSelecionado is null)
+                {
+                    <MudText Typo="Typo.body1" Class="mt-3">Selecione um pedido em "Em andamento" ou "Todos os pedidos" para ver os
+                        detalhes.</MudText>
+                    }
+            else
+                    {
+                        <MudCard Class="mt-3" Elevation="0">
+                            <MudCardContent>
+                                <MudText Typo="Typo.h6">Detalhes do Pedido #@pedidoSelecionado.Id</MudText>
+                                <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                                    @FormatarStatusParaExibicao(pedidoSelecionado) • @ObterDescricaoTipoAtendimento(pedidoSelecionado)
+                                </MudText>
+
+                                <MudStack AlignItems="AlignItems.Center" Class="mb-1">
+                                    <MudText Typo="Typo.subtitle2" Class="mb-1">Linha do tempo</MudText>
+                                    @foreach (var itemTimeline in pedidoSelecionado.HistoricoStatus.OrderBy(h => h.DataStatusUtc))
+                                    {
+                                        <MudText Typo="Typo.body2">• @FormatarStatus(itemTimeline.Status) às
+                                            @itemTimeline.DataStatusUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                            (@itemTimeline.RegistradoPor)</MudText>
+                                        }
+                                    </MudStack>
+
+                                    <MudDivider Class="my-3" />
+
+                                    @if (pedidoSelecionado.Itens.Any())
+                                    {
+                                        @foreach (var item in pedidoSelecionado.Itens)
+                                        {
+                                            <MudText Typo="Typo.body2">
+                                                @item.Quantidade x @item.NomeProduto - @item.Subtotal.ToString("C", culturaPtBr)
+                                            </MudText>
+                                        }
+                                    }
+
+                                    <MudDivider Class="my-3" />
+                                    <MudText Typo="Typo.body1"><strong>Total:</strong> @pedidoSelecionado.Total.ToString("C", culturaPtBr)
+                                    </MudText>
+                                    @if (!string.IsNullOrWhiteSpace(pedidoSelecionado.EnderecoEntrega))
+                                    {
+                                        <MudText Typo="Typo.body2" Class="mt-2"><strong>Endereço:</strong> @pedidoSelecionado.EnderecoEntrega
+                                        </MudText>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(pedidoSelecionado.Observacoes))
+                                    {
+                                        <MudText Typo="Typo.body2"><strong>Observações:</strong> @pedidoSelecionado.Observacoes</MudText>
+                                    }
+                                </MudCardContent>
+                            </MudCard>
+                        }
+                    }
+
+                    <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                        <div style="height:72px;"></div>
+                    </MudHidden>
+                }
+            </MudContainer>
+@code {
+    private static readonly CultureInfo culturaPtBr = CultureInfo.GetCultureInfo("pt-BR");
+
+    private readonly StatusPedido[] fluxoStatus =
+    {
+        StatusPedido.Criado,
+        StatusPedido.Confirmado,
+        StatusPedido.EmPreparacao,
+        StatusPedido.Enviado,
+        StatusPedido.Concluido
+    };
+
+    private bool carregando = true;
+    private int abaAtiva;
+    private string? erro;
+    private string? avisoTempoReal;
+    private List<PedidoResumoDto> pedidos = new();
+    private List<PedidoDto> pedidosEmAndamento = new();
+    private PedidoDto? pedidoSelecionado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await CarregarDadosAsync();
+
+            var perfil = await AuthService.GetProfileAsync();
+            if (perfil is not null)
+            {
+                try
+                {
+                    await ServicoTempoRealPedidosCliente.IniciarParaClienteAsync(perfil.Id, async evento =>
+                    {
+                        await InvokeAsync(async () =>
+                        {
+                            ExibirToastAtualizacaoPedido(evento);
+                            await CarregarDadosAsync();
+                            StateHasChanged();
+                        });
+                    });
+
+                    avisoTempoReal = null;
+                }
+                catch
+                {
+                    avisoTempoReal = "Conexão em tempo real falhou, mostrando pedidos estáticos.";
+                }
+            }
+        }
+        catch
+        {
+            erro = "Não foi possível carregar seus pedidos.";
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    private async Task SelecionarPedidoAsync(int pedidoId)
+    {
+        pedidoSelecionado = await PedidosService.GetPedidoAsync(pedidoId);
+        if (pedidoSelecionado is not null)
+        {
+            abaAtiva = 2;
+        }
+    }
+
+    private async Task ConfirmarEntregaAsync(int pedidoId)
+    {
+        var resultado = await PedidosService.ConfirmarEntregaAsync(pedidoId);
+        if (!resultado.Success)
+        {
+            erro = resultado.ErrorMessage ?? "Não foi possível confirmar entrega.";
+            return;
+        }
+
+        erro = null;
+        await CarregarDadosAsync();
+    }
+
+    private async Task CarregarDadosAsync()
+    {
+        pedidos = await PedidosService.GetMeusPedidosAsync();
+        pedidos = pedidos
+            .OrderByDescending(p => p.CreatedAtUtc)
+            .ToList();
+
+        var pedidosIdsAndamento = pedidos
+            .Where(p => p.Status is StatusPedido.Criado or StatusPedido.Confirmado or StatusPedido.EmPreparacao or
+                StatusPedido.Enviado)
+            .Select(p => p.Id)
+            .ToList();
+
+        var detalhes = new List<PedidoDto>();
+        foreach (var pedidoId in pedidosIdsAndamento)
+        {
+            var detalhe = await PedidosService.GetPedidoAsync(pedidoId);
+            if (detalhe is not null)
+            {
+                detalhes.Add(detalhe);
+            }
+        }
+
+        pedidosEmAndamento = detalhes
+            .Where(EhVisivelNaFilaCliente)
+            .OrderByDescending(p => p.UpdatedAtUtc)
+            .ThenByDescending(p => p.CreatedAtUtc)
+            .ToList();
+
+        if (pedidoSelecionado is not null)
+        {
+            pedidoSelecionado = await PedidosService.GetPedidoAsync(pedidoSelecionado.Id);
+        }
+    }
+
+    private DateTime? ObterDataStatus(PedidoDto pedido, StatusPedido status)
+    {
+        var dataHistorico = pedido.HistoricoStatus
+            .Where(h => h.Status == status)
+            .OrderBy(h => h.DataStatusUtc)
+            .Select(h => (DateTime?)h.DataStatusUtc)
+            .FirstOrDefault();
+
+        if (dataHistorico.HasValue)
+        {
+            return dataHistorico;
+        }
+
+        if (status == StatusPedido.Criado)
+        {
+            return pedido.CreatedAtUtc;
+        }
+
+        return null;
+    }
+
+    private static string FormatarStatus(StatusPedido status)
+    {
+        return status switch
+        {
+            StatusPedido.Criado => "Criado",
+            StatusPedido.Confirmado => "Confirmado",
+            StatusPedido.EmPreparacao => "Em preparação",
+            StatusPedido.Enviado => "Enviado",
+            StatusPedido.Concluido => "Concluído",
+            StatusPedido.Cancelado => "Cancelado",
+            _ => status.ToString()
+        };
+    }
+
+    private static string FormatarStatusParaExibicao(PedidoResumoDto pedido)
+    {
+        return FormatarStatus(pedido.Status);
+    }
+
+    private static string FormatarStatusParaExibicao(PedidoDto pedido)
+    {
+        return FormatarStatus(pedido.Status);
+    }
+
+    private static string ObterProximoPassoTextoCliente(PedidoDto pedido)
+    {
+        return ObterProximoPassoTextoCliente(pedido.Status);
+    }
+
+    private static string ObterProximoPassoTextoCliente(StatusPedido status)
+    {
+        return status switch
+        {
+            StatusPedido.Criado => "Aguardando a empresa aceitar seu pedido.",
+            StatusPedido.Confirmado => "A empresa confirmou e vai iniciar o preparo.",
+            StatusPedido.EmPreparacao => "Pedido em preparação.",
+            StatusPedido.Enviado => "Confirmar entrega para concluir o pedido.",
+            StatusPedido.Concluido => "Pedido concluído.",
+            StatusPedido.Cancelado => "Pedido cancelado pela empresa.",
+            _ => "Sem ações pendentes."
+        };
+    }
+
+    private static bool EhVisivelNaFilaCliente(PedidoDto pedido)
+    {
+        return pedido.Status is StatusPedido.Criado or StatusPedido.Confirmado or StatusPedido.EmPreparacao or
+StatusPedido.Enviado;
+    }
+
+    private static Severity ObterSeveridadeProximoPassoCliente(StatusPedido status)
+    {
+        return status switch
+        {
+            StatusPedido.Criado => Severity.Warning,
+            StatusPedido.Confirmado => Severity.Info,
+            StatusPedido.EmPreparacao => Severity.Info,
+            StatusPedido.Enviado => Severity.Success,
+            StatusPedido.Concluido => Severity.Success,
+            StatusPedido.Cancelado => Severity.Error,
+            _ => Severity.Normal
+        };
+    }
+
+    private static string ObterDescricaoTipoAtendimento(PedidoResumoDto pedido)
+    {
+        return pedido.TipoAtendimento switch
+        {
+            TipoAtendimentoPedido.ComerAqui => string.IsNullOrWhiteSpace(pedido.NumeroMesa)
+                ? "Para comer aqui"
+                : $"Para comer aqui (Mesa {pedido.NumeroMesa})",
+            TipoAtendimentoPedido.Retirada => "Retirada",
+            _ => "Entrega"
+        };
+    }
+
+    private static string ObterDescricaoTipoAtendimento(PedidoDto pedido)
+    {
+        return pedido.TipoAtendimento switch
+        {
+            TipoAtendimentoPedido.ComerAqui => string.IsNullOrWhiteSpace(pedido.NumeroMesa)
+                ? "Para comer aqui"
+                : $"Para comer aqui (Mesa {pedido.NumeroMesa})",
+            TipoAtendimentoPedido.Retirada => "Retirada",
+            _ => "Entrega"
+        };
+    }
+
+    private string ObterTituloAbaAtiva()
+    {
+        return abaAtiva switch
+        {
+            0 => "Em andamento",
+            1 => "Todos os pedidos",
+            2 => "Detalhes",
+            _ => "Pedidos"
+        };
+    }
+
+    private void ExibirToastAtualizacaoPedido(EventoPedidoTempoRealDto evento)
+    {
+        if (!Enum.TryParse<StatusPedido>(evento.Status, true, out var status))
+        {
+            return;
+        }
+
+        var mensagem = status switch
+        {
+            StatusPedido.Criado => $"Pedido #{evento.Id} criado.",
+            StatusPedido.Confirmado => $"Pedido #{evento.Id} confirmado.",
+            StatusPedido.EmPreparacao => $"Pedido #{evento.Id} em preparo.",
+            StatusPedido.Enviado => $"Pedido #{evento.Id} enviado.",
+            StatusPedido.Concluido => $"Pedido #{evento.Id} concluído.",
+            _ => null
+        };
+
+        if (string.IsNullOrWhiteSpace(mensagem))
+        {
+            return;
+        }
+
+        Snackbar.Add(mensagem, Severity.Info);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await ServicoTempoRealPedidosCliente.DisposeAsync();
+    }
+}

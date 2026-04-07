@@ -1,0 +1,82 @@
+@using Restaurapp.BlazorServer.Services
+@inject IMagicRegisterLinkService RegisterLinkService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1" Class="mb-3">
+            Gere um link de registro para permitir que um novo <strong>Admin de Escritório</strong> se cadastre.
+        </MudText>
+
+        <MudNumericField @bind-Value="_durationInMinutes" Label="Duração (minutos)" Min="1" Max="10080"
+                         HelperText="Máximo: 7 dias (10080 minutos)" Class="mb-3" />
+
+        @if (!string.IsNullOrEmpty(_generatedLink))
+        {
+            <MudAlert Severity="Severity.Success" Class="mt-4">
+                <MudText Typo="Typo.body2" Class="mb-2"><strong>Link gerado com sucesso!</strong></MudText>
+                <MudTextField @bind-Value="_generatedLink" Label="Link de Registro" ReadOnly="true"
+                              Variant="Variant.Outlined" />
+                <MudButton OnClick="CopyToClipboard" StartIcon="@Icons.Material.Filled.ContentCopy" Class="mt-2"
+                           Size="Size.Small">
+                    Copiar Link
+                </MudButton>
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Fechar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="GenerateLink" Disabled="@_generating">
+            @(_generating ? "Gerando..." : "Gerar Link")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public int EmpresaId { get; set; }
+
+    private int _durationInMinutes = 1440; // 24 horas padrão
+    private string _generatedLink = string.Empty;
+    private bool _generating = false;
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task GenerateLink()
+    {
+        _generating = true;
+        try
+        {
+            _generatedLink = await RegisterLinkService.GenerateRegisterLinkAsync(_durationInMinutes, "Regular", EmpresaId);
+            Snackbar.Add("Link de registro gerado com sucesso", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _generating = false;
+        }
+    }
+
+    private async Task CopyToClipboard()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _generatedLink);
+            Snackbar.Add("Link copiado para a área de transferência", Severity.Success);
+        }
+        catch
+        {
+            Snackbar.Add("Não foi possível copiar automaticamente. Copie manualmente.", Severity.Warning);
+        }
+    }
+}

@@ -1,0 +1,154 @@
+@page "/conta"
+@using System.Globalization
+
+@inject ContaMesaService ContaMesaService
+@inject ContaMesaEstadoService ContaMesaEstadoService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Conta</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Minha Conta da Mesa</MudText>
+
+@if (carregando)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+}
+else if (conta is null)
+{
+    <MudAlert Severity="Severity.Info">Você não possui conta aberta no momento.</MudAlert>
+}
+else
+{
+    var pedidosVisiveis = conta.Pedidos
+        .Where(p => p.Status != StatusPedido.Cancelado && p.Status != StatusPedido.Criado)
+        .OrderBy(p => p.CreatedAtUtc)
+        .ToList();
+
+    if (!pedidosVisiveis.Any())
+    {
+        <MudAlert Severity="Severity.Info">Você não possui conta aberta no momento.</MudAlert>
+    }
+    else
+    {
+        <MudCard Class="mb-4">
+            <MudCardContent>
+                <MudText Typo="Typo.h6">@conta.EmpresaNome</MudText>
+                <MudText Typo="Typo.body1">Mesa: <strong>@conta.NumeroMesa</strong></MudText>
+                <MudText Typo="Typo.body2">Aberta em: @conta.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudText>
+                <MudText Typo="Typo.body1" Class="mt-2">Total atual: <strong>@conta.TotalConta.ToString("C",
+                                                        culturaPtBr)</strong></MudText>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Class="mt-3" Disabled="@pagandoConta"
+                               OnClick="PagarContaAsync">
+                        @(pagandoConta ? "Processando..." : "Pagar")
+                    </MudButton>
+                </MudCardContent>
+            </MudCard>
+
+            @foreach (var pedido in pedidosVisiveis)
+            {
+                <MudPaper Class="pa-4 mb-3" Elevation="1">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                        <MudText Typo="Typo.subtitle1">Pedido #@pedido.PedidoId</MudText>
+                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined">@FormatarStatusParaExibicao(pedido)
+                        </MudChip>
+                    </MudStack>
+                    <MudText Typo="Typo.caption">@pedido.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudText>
+
+                    <MudTable Items="pedido.Itens" Dense="true" Hover="true" Class="mt-2">
+                        <HeaderContent>
+                            <MudTh>Item</MudTh>
+                            <MudTh>Qtd</MudTh>
+                            <MudTh>Unitário</MudTh>
+                            <MudTh>Subtotal</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Item">@context.NomeProduto</MudTd>
+                            <MudTd DataLabel="Qtd">@context.Quantidade</MudTd>
+                            <MudTd DataLabel="Unitário">@context.PrecoUnitario.ToString("C", culturaPtBr)</MudTd>
+                            <MudTd DataLabel="Subtotal">@context.Subtotal.ToString("C", culturaPtBr)</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+
+                    <MudText Typo="Typo.body2" Align="Align.Right" Class="mt-2">
+                        Total do pedido: <strong>@pedido.Total.ToString("C", culturaPtBr)</strong>
+                    </MudText>
+                </MudPaper>
+            }
+        }
+    }
+
+@code {
+    private static readonly CultureInfo culturaPtBr = CultureInfo.GetCultureInfo("pt-BR");
+
+    private bool carregando = true;
+    private bool pagandoConta;
+    private ContaAbertaDetalheDto? conta;
+
+    protected override async Task OnInitializedAsync()
+    {
+        conta = await ContaMesaService.ObterContaAbertaDetalheAsync();
+        carregando = false;
+    }
+
+    private async Task PagarContaAsync()
+    {
+        if (pagandoConta || conta is null)
+        {
+            return;
+        }
+
+        pagandoConta = true;
+
+        try
+        {
+            var parameters = new DialogParameters<DialogPagamentoGooglePay>
+            {
+                { x => x.ContaMesaId, conta.ContaMesaId },
+                { x => x.Total, conta.TotalConta }
+            };
+
+            var options = new DialogOptions
+            {
+                CloseOnEscapeKey = true,
+                MaxWidth = MaxWidth.Small,
+                FullWidth = true,
+                BackdropClick = false
+            };
+
+            var dialog = await DialogService.ShowAsync<DialogPagamentoGooglePay>("Formas de pagamento", parameters, options);
+            var result = await dialog.Result;
+
+            if (result is null || result.Canceled)
+            {
+                return;
+            }
+
+            conta = null;
+            await ContaMesaEstadoService.AtualizarAsync();
+        }
+        finally
+        {
+            pagandoConta = false;
+        }
+    }
+
+    private static string FormatarStatusParaExibicao(ContaPedidoDto pedido)
+    {
+        if (pedido.TipoAtendimento == TipoAtendimentoPedido.ComerAqui && pedido.Status == StatusPedido.Enviado)
+        {
+            return "Saiu para a mesa";
+        }
+
+        return pedido.Status switch
+        {
+            StatusPedido.Criado => "Criado",
+            StatusPedido.Confirmado => "Confirmado",
+            StatusPedido.EmPreparacao => "Em preparação",
+            StatusPedido.Enviado => "Enviado",
+            StatusPedido.Concluido => "Concluído",
+            StatusPedido.Cancelado => "Cancelado",
+            _ => pedido.Status.ToString()
+        };
+    }
+}

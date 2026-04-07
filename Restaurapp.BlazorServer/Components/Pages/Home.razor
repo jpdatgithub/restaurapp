@@ -1,0 +1,43 @@
+﻿@page "/"
+@inject NavigationManager Navigation
+
+<PageTitle>Home</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+    <MudPaper Class="pa-6" Elevation="0">
+        <MudText Typo="Typo.h4">Painel da Empresa</MudText>
+        <MudText Typo="Typo.body1" Class="mt-2 mb-4">Escolha uma operação rápida de caixa.</MudText>
+
+        <MudStack Spacing="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" OnClick="IrParaVendaAvulsa">
+                Vender
+            </MudButton>
+
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large" OnClick="IrParaPedidoConta">
+                Pedir para conta
+            </MudButton>
+
+            <MudButton Variant="Variant.Filled" Color="Color.Info" Size="Size.Large"
+                       OnClick="IrParaPedidoEntregaTakeaway">
+                Pedir entrega/takeaway
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private void IrParaVendaAvulsa()
+    {
+        Navigation.NavigateTo("/venda-avulsa");
+    }
+
+    private void IrParaPedidoConta()
+    {
+        Navigation.NavigateTo("/venda-avulsa/conta");
+    }
+
+    private void IrParaPedidoEntregaTakeaway()
+    {
+        Navigation.NavigateTo("/venda-avulsa/entrega-takeaway");
+    }
+}

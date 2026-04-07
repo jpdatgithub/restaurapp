@@ -1,0 +1,21 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager Navigation
+
+<AuthorizeView>
+    <NotAuthorized>
+        @BuildRedirect()
+    </NotAuthorized>
+    <Authorizing>
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+    </Authorizing>
+</AuthorizeView>
+
+@code {
+    private RenderFragment BuildRedirect() => builder =>
+    {
+        var relative = Navigation.ToBaseRelativePath(Navigation.Uri);
+        var target = string.IsNullOrWhiteSpace(relative) ? "/" : $"/{relative}";
+        var encoded = Uri.EscapeDataString(target);
+        Navigation.NavigateTo($"/login?returnUrl={encoded}", forceLoad: true);
+    };
+}

@@ -1,0 +1,69 @@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Cadastrar receita</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="form" @bind-IsValid="success">
+            <MudTextField T="string" Label="Descrição" Required="true" RequiredError="Informe a descrição da receita."
+                          @bind-Value="descricao" />
+
+            <MudNumericField T="decimal?" Label="Valor" Variant="Variant.Outlined" Min="0.01m"
+                             Adornment="Adornment.Start" AdornmentText="R$" Required="true"
+                             RequiredError="Informe o valor da receita." Class="mt-3" @bind-Value="valor" />
+
+            <MudCheckBox T="bool" Label="Data retroativa?" Class="mt-3" @bind-Value="dataRetroativaHabilitada" />
+
+            @if (dataRetroativaHabilitada)
+            {
+                <MudTextField T="DateTime?" Label="Data e hora" InputType="InputType.DateTimeLocal"
+                              Variant="Variant.Outlined" Required="true" RequiredError="Informe a data e hora retroativa."
+                              Class="mt-3" @bind-Value="dataHoraRetroativa" />
+            }
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Salvar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private MudForm? form;
+    private bool success;
+    private string descricao = string.Empty;
+    private decimal? valor;
+    private bool dataRetroativaHabilitada;
+    private DateTime? dataHoraRetroativa;
+
+    private async Task Submit()
+    {
+        if (form is null)
+        {
+            return;
+        }
+
+        await form.ValidateAsync();
+
+        if (!success || valor is null || string.IsNullOrWhiteSpace(descricao))
+        {
+            return;
+        }
+
+        if (dataRetroativaHabilitada && dataHoraRetroativa is null)
+        {
+            return;
+        }
+
+        MudDialog.Close(DialogResult.Ok(new NovaReceitaDialogResult(
+            descricao.Trim(),
+            valor.Value,
+            dataRetroativaHabilitada ? dataHoraRetroativa : null)));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    public sealed record NovaReceitaDialogResult(string Descricao, decimal Valor, DateTime? DataRetroativa);
+}

@@ -1,0 +1,53 @@
+﻿@inject ClienteAuthService AuthService
+@inject ClienteAuthStateProvider ClienteAuthStateProvider
+@inject NavigationManager Navigation
+
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
+    <MudNavLink Href="/meus-pedidos" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ReceiptLong">Meus Pedidos
+    </MudNavLink>
+    <MudNavLink Href="/carrinho" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ShoppingCart">Carrinho
+    </MudNavLink>
+    <MudNavLink Href="/conta" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Receipt">Conta</MudNavLink>
+
+    @if (_isAuthenticated && !_isGuest)
+    {
+        <MudNavLink Href="/profile" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Person">Perfil</MudNavLink>
+        <MudDivider Class="my-2" />
+        <MudButton StartIcon="@Icons.Material.Filled.Logout" OnClick="Logout" FullWidth="true" Color="Color.Default"
+                   Class="justify-start pl-4" Style="text-transform: none;">
+            Sair
+        </MudButton>
+    }
+    else
+    {
+        <MudDivider Class="my-2" />
+
+        @if (_isGuest)
+        {
+            <MudText Typo="Typo.caption" Class="px-4 pb-2">Modo convidado ativo</MudText>
+        }
+
+        <MudNavLink Href="/login" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Login">Entrar</MudNavLink>
+        <MudNavLink Href="/register" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.PersonAdd">Criar conta
+        </MudNavLink>
+    }
+</MudNavMenu>
+
+@code {
+    private bool _isAuthenticated;
+    private bool _isGuest;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await ClienteAuthStateProvider.GetAuthenticationStateAsync();
+        _isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+        _isGuest = await ClienteAuthStateProvider.IsGuestAsync();
+    }
+
+    private async Task Logout()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/login", forceLoad: true);
+    }
+}

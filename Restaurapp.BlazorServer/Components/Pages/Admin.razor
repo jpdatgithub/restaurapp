@@ -1,0 +1,417 @@
+@page "/admin"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Identity
+@using Restaurapp.BlazorServer.Services
+@using Restaurapp.BlazorServer.Data
+@using Restaurapp.BlazorServer.Models.Dtos
+@using System.ComponentModel.DataAnnotations
+@attribute [Authorize(Roles = "Admin")]
+@inject UserManager<ApplicationUser> UserManager
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject IProvedorDeTenantService ProvedorDeTenant
+@inject AppDbContext DbContext
+
+<PageTitle>Minha empresa</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h3" Class="mb-4">Minha empresa</MudText>
+
+    <MudHidden Breakpoint="Breakpoint.MdAndUp">
+        <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mb-2">@ObterSubtituloAbaAtual()</MudText>
+    </MudHidden>
+
+    <MudHidden Breakpoint="Breakpoint.SmAndDown">
+        <MudTabs Elevation="0" Rounded="true" @bind-ActivePanelIndex="abaAtiva">
+            <MudTabPanel Text="Minha empresa" Icon="@Icons.Material.Filled.Business" />
+            <MudTabPanel Text="Usuários" Icon="@Icons.Material.Filled.People" />
+            <MudTabPanel Text="Configurações" Icon="@Icons.Material.Filled.Settings" />
+        </MudTabs>
+    </MudHidden>
+
+    <MudHidden Breakpoint="Breakpoint.MdAndUp">
+        <MudPaper Elevation="8" Class="pa-0" Style="position:fixed;left:0;right:0;bottom:0;z-index:1200;">
+            <MudTabs Elevation="0" Rounded="false" Position="Position.Bottom" MinimumTabWidth="20px" Centered="true"
+                     @bind-ActivePanelIndex="abaAtiva">
+                <MudTabPanel Icon="@Icons.Material.Filled.Business" />
+                <MudTabPanel Icon="@Icons.Material.Filled.People" />
+                <MudTabPanel Icon="@Icons.Material.Filled.Settings" />
+            </MudTabs>
+        </MudPaper>
+    </MudHidden>
+
+    @if (abaAtiva == 0)
+    {
+        <MudText Typo="Typo.h5" Class="mb-4 mt-3">Informações da empresa</MudText>
+
+        <EditForm Model="_officeModel" OnValidSubmit="HandleUpdateOffice">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_officeModel.Nome" Label="Nome da Empresa" Variant="Variant.Outlined"
+                                  For="@(() => _officeModel.Nome)" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit"
+                               Disabled="_updatingOffice">
+                        @(_updatingOffice ? "Salvando..." : "Salvar Alterações")
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    }
+    else if (abaAtiva == 1)
+    {
+        <MudStack Row="true" Spacing="2" Class="mb-4 mt-3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="OpenCreateDialog"
+                       StartIcon="@Icons.Material.Filled.Add">
+                Criar Novo Usuário
+            </MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="OpenRegisterLinkDialog"
+                       StartIcon="@Icons.Material.Filled.Link">
+                Gerar Link de Registro
+            </MudButton>
+        </MudStack>
+
+        <MudTable Items="@_usuarios" Hover="true" Breakpoint="Breakpoint.Sm" Loading="@_loading"
+                  LoadingProgressColor="Color.Primary">
+            <HeaderContent>
+                <MudTh>Nome</MudTh>
+                <MudTh>Email</MudTh>
+                <MudTh>Telefone</MudTh>
+                <MudTh>Cargo</MudTh>
+                <MudTh>Ações</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Nome">@context.Nome</MudTd>
+                <MudTd DataLabel="Email">@context.Email</MudTd>
+                <MudTd DataLabel="Telefone">@context.Telefone</MudTd>
+                <MudTd DataLabel="Cargo">
+                    <MudChip T="string" Size="Size.Small" Color="@(context.IsAdmin? Color.Primary: Color.Default)">
+                        @(context.IsAdmin ? "Admin" : "Regular")
+                    </MudChip>
+                </MudTd>
+                <MudTd DataLabel="Ações">
+                    <MudTooltip Text="Alterar cargo">
+                        <MudIconButton Icon="@Icons.Material.Filled.AdminPanelSettings" Color="Color.Info"
+                                       OnClick="@(() => ToggleUserRole(context))" Size="Size.Small" />
+                    </MudTooltip>
+                    <MudTooltip Text="Deletar usuário">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                       OnClick="@(() => DeleteUsuario(context))" Size="Size.Small" />
+                    </MudTooltip>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+    else if (abaAtiva == 2)
+    {
+        <MudText Typo="Typo.h5" Class="mb-4 mt-3">Configurações</MudText>
+
+        <EditForm Model="_configModel" OnValidSubmit="HandleUpdateConfiguracoes">
+            <MudPaper Class="pa-4 mb-3" Elevation="0">
+                <MudSwitch T="bool" Color="Color.Primary" @bind-Value="_configModel.HabilitarContasPosPagas"
+                           Label="Habilitar contas pós pagas?" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Quando habilitado, pedidos para comer aqui vinculam o cliente a uma conta de mesa até o fechamento.
+                </MudText>
+
+            </MudPaper>
+
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit"
+                       Disabled="_updatingConfig">
+                @(_updatingConfig ? "Salvando..." : "Salvar Configurações")
+            </MudButton>
+        </EditForm>
+    }
+
+    <MudHidden Breakpoint="Breakpoint.MdAndUp">
+        <div style="height:72px;"></div>
+    </MudHidden>
+</MudContainer>
+
+@code {
+    private int abaAtiva;
+    private List<UsuarioDto> _usuarios = new();
+    private bool _loading = true;
+    private OfficeModel _officeModel = new();
+    private ConfigModel _configModel = new();
+    private bool _updatingOffice = false;
+    private bool _updatingConfig = false;
+
+    private string ObterSubtituloAbaAtual() => abaAtiva switch
+    {
+        0 => "Minha empresa",
+        1 => "Usuários",
+        2 => "Configurações",
+        _ => "Minha empresa"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsuarios();
+        await LoadEscritorio();
+    }
+
+    private async Task LoadEscritorio()
+    {
+        try
+        {
+            var empresaId = ProvedorDeTenant.EmpresaId;
+            var escritorio = await DbContext.Empresas.FindAsync(empresaId);
+
+            if (escritorio != null)
+            {
+                _officeModel.Nome = escritorio.Nome;
+                _configModel.HabilitarContasPosPagas = escritorio.HabilitarContasPosPagas;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao carregar dados do escritório: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadUsuarios()
+    {
+        _loading = true;
+        try
+        {
+            var empresaId = ProvedorDeTenant.EmpresaId;
+
+            var users = UserManager.Users
+            .Where(u => u.EmpresaId == empresaId)
+            .ToList();
+
+            _usuarios = new List<UsuarioDto>();
+
+            foreach (var user in users)
+            {
+                var roles = await UserManager.GetRolesAsync(user);
+                var isAdmin = roles.Contains("Admin");
+
+                _usuarios.Add(new UsuarioDto
+                {
+                    Id = user.Id,
+                    Nome = user.Nome ?? string.Empty,
+                    Email = user.Email ?? string.Empty,
+                    Telefone = user.PhoneNumber ?? string.Empty,
+                    IsAdmin = isAdmin
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao carregar usuários: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var empresaId = ProvedorDeTenant.EmpresaId;
+        var parameters = new DialogParameters<CreateUsuarioDialog>
+{
+    { x => x.EmpresaId, empresaId }
+};
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true,
+            BackdropClick = false
+        };
+
+        var dialog = await DialogService.ShowAsync<CreateUsuarioDialog>("Criar Usuário", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            await LoadUsuarios();
+        }
+    }
+
+    private async Task ToggleUserRole(UsuarioDto usuario)
+    {
+        var novoRole = usuario.IsAdmin ? "Regular" : "Admin";
+        var roleAtual = usuario.IsAdmin ? "Admin" : "Regular";
+
+        bool? result = await DialogService.ShowMessageBoxAsync(
+        "Alterar Cargo",
+        $"Deseja alterar o cargo de {usuario.Nome} de {roleAtual} para {novoRole}?",
+        yesText: "Alterar", cancelText: "Cancelar");
+
+        if (result == true)
+        {
+            try
+            {
+                var user = await UserManager.FindByIdAsync(usuario.Id);
+                if (user != null)
+                {
+                    // VALIDAÇÃO DE SEGURANÇA: Verifica se o usuário pertence ao mesmo escritório
+                    var empresaIdAtual = ProvedorDeTenant.EmpresaId;
+                    if (user.EmpresaId != empresaIdAtual)
+                    {
+                        Snackbar.Add("Você não tem permissão para editar este usuário", Severity.Error);
+                        return;
+                    }
+
+                    // Remove a role atual
+                    if (usuario.IsAdmin)
+                    {
+                        await UserManager.RemoveFromRoleAsync(user, "Admin");
+                    }
+                    else
+                    {
+                        await UserManager.RemoveFromRoleAsync(user, "Regular");
+                    }
+
+                    // Adiciona a nova role
+                    var addResult = await UserManager.AddToRoleAsync(user, novoRole);
+
+                    if (addResult.Succeeded)
+                    {
+                        Snackbar.Add($"Cargo alterado para {novoRole} com sucesso", Severity.Success);
+                        await LoadUsuarios();
+                    }
+                    else
+                    {
+                        Snackbar.Add($"Erro ao alterar cargo: {string.Join(", ", addResult.Errors.Select(e => e.Description))}",
+                        Severity.Error);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Erro: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task OpenRegisterLinkDialog()
+    {
+        var empresaId = ProvedorDeTenant.EmpresaId;
+        var parameters = new DialogParameters<RegisterLinkDialog>
+{
+    { x => x.EmpresaId, empresaId }
+};
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+
+        await DialogService.ShowAsync<RegisterLinkDialog>("Gerar Link de Registro", parameters, options);
+    }
+
+    private async Task DeleteUsuario(UsuarioDto usuario)
+    {
+        bool? result = await DialogService.ShowMessageBoxAsync(
+        "Confirmar Exclusão",
+        $"Tem certeza que deseja deletar o usuário {usuario.Email}?",
+        yesText: "Deletar", cancelText: "Cancelar");
+
+        if (result == true)
+        {
+            try
+            {
+                var user = await UserManager.FindByIdAsync(usuario.Id);
+                if (user != null)
+                {
+                    // VALIDAÇÃO DE SEGURANÇA: Verifica se o usuário pertence ao mesmo escritório
+                    var empresaIdAtual = ProvedorDeTenant.EmpresaId;
+                    if (user.EmpresaId != empresaIdAtual)
+                    {
+                        Snackbar.Add("Você não tem permissão para deletar este usuário", Severity.Error);
+                        return;
+                    }
+
+                    var deleteResult = await UserManager.DeleteAsync(user);
+                    if (deleteResult.Succeeded)
+                    {
+                        Snackbar.Add("Usuário deletado com sucesso", Severity.Success);
+                        await LoadUsuarios();
+                    }
+                    else
+                    {
+                        Snackbar.Add($"Erro ao deletar usuário: {string.Join(", ", deleteResult.Errors.Select(e => e.Description))}",
+                        Severity.Error);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Erro: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task HandleUpdateOffice()
+    {
+        _updatingOffice = true;
+        try
+        {
+            var empresaId = ProvedorDeTenant.EmpresaId;
+            var escritorio = await DbContext.Empresas.FindAsync(empresaId);
+
+            if (escritorio != null)
+            {
+                escritorio.Nome = _officeModel.Nome;
+                await DbContext.SaveChangesAsync();
+                Snackbar.Add("Escritório atualizado com sucesso", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Escritório não encontrado", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _updatingOffice = false;
+        }
+    }
+
+    private async Task HandleUpdateConfiguracoes()
+    {
+        _updatingConfig = true;
+        try
+        {
+            var empresaId = ProvedorDeTenant.EmpresaId;
+            var escritorio = await DbContext.Empresas.FindAsync(empresaId);
+
+            if (escritorio != null)
+            {
+                escritorio.HabilitarContasPosPagas = _configModel.HabilitarContasPosPagas;
+                await DbContext.SaveChangesAsync();
+                Snackbar.Add("Configurações atualizadas com sucesso", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Escritório não encontrado", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _updatingConfig = false;
+        }
+    }
+
+    public class OfficeModel
+    {
+        [Required(ErrorMessage = "Nome do escritório é obrigatório")]
+        public string Nome { get; set; } = string.Empty;
+    }
+
+    public class ConfigModel
+    {
+        public bool HabilitarContasPosPagas { get; set; }
+    }
+}

@@ -1,0 +1,84 @@
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@inject UserManager<ApplicationUser> UserManager
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudAlert Severity="Severity.Info" Class="mb-3">
+            Novo usuário será criado no seu escritório (ID: @EmpresaId)
+        </MudAlert>
+        <MudForm @ref="_form" @bind-IsValid="@_success">
+            <MudTextField @bind-Value="_model.Email" Label="Email" Required="true" RequiredError="Email é obrigatório"
+                          Validation="@(new EmailAddressAttribute() { ErrorMessage = "Email inválido" })" />
+
+            <MudTextField @bind-Value="_model.Senha" Label="Senha" InputType="InputType.Password" Required="true"
+                          RequiredError="Senha é obrigatória" Class="mt-3" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit" Disabled="@(!_success)">Criar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public int EmpresaId { get; set; }
+    [Parameter]
+    public string CargoParaRegistrar { get; set; } = "Regular";
+    private MudForm _form = null!;
+    private bool _success;
+    private CreateUsuarioModel _model = new();
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task Submit()
+    {
+        await _form.ValidateAsync();
+
+        if (_form.IsValid)
+        {
+            try
+            {
+                var usuario = new ApplicationUser
+                {
+                    UserName = _model.Email,
+                    Email = _model.Email,
+                    EmpresaId = EmpresaId,
+                    EmailConfirmed = true
+                };
+
+                var result = await UserManager.CreateAsync(usuario, _model.Senha);
+
+                if (result.Succeeded)
+                {
+                    // Adiciona role Admin ao novo usuário
+                    await UserManager.AddToRoleAsync(usuario, CargoParaRegistrar);
+                    Snackbar.Add("Usuário criado com sucesso", Severity.Success);
+                    MudDialog.Close(DialogResult.Ok(true));
+                }
+                else
+                {
+                    Snackbar.Add($"Erro ao criar usuário: {string.Join(", ", result.Errors.Select(e => e.Description))}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Erro: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    public class CreateUsuarioModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Senha { get; set; } = string.Empty;
+    }
+}

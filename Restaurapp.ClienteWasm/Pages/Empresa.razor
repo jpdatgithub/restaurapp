@@ -1,0 +1,121 @@
+@page "/empresa/{EmpresaId:int}"
+@using System.Globalization
+
+@inject ClienteAuthService AuthService
+@inject CarrinhoService CarrinhoService
+@inject NavigationManager Navigation
+
+<PageTitle>Empresa</PageTitle>
+
+@if (carregando)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+}
+else if (empresa is null)
+{
+    <MudAlert Severity="Severity.Error">Empresa não encontrada.</MudAlert>
+}
+else
+{
+    <MudText Typo="Typo.h4" Class="mb-4">@empresa.Nome</MudText>
+
+    @if (!string.IsNullOrWhiteSpace(mensagem))
+    {
+        <MudAlert Severity="@mensagemSeverity" Dense="true" Class="mb-4">@mensagem</MudAlert>
+    }
+
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ShoppingCart" OnClick="IrParaCarrinho"
+               Class="mb-4">
+        Ir para carrinho
+    </MudButton>
+
+    @if (!empresa.Produtos.Any())
+    {
+        <MudAlert Severity="Severity.Info">Esta empresa ainda não possui produtos cadastrados.</MudAlert>
+    }
+    else
+    {
+        <MudGrid>
+            @foreach (var produto in empresa.Produtos)
+            {
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard>
+                        <MudCardContent>
+                            <div
+                                style="height:140px;border-radius:8px;overflow:hidden;margin-bottom:12px;background:linear-gradient(135deg, rgba(255,248,238,0.9), rgba(255,255,255,1));display:flex;align-items:center;justify-content:center;">
+                                @if (!string.IsNullOrWhiteSpace(produto.ImagemUrl))
+                                {
+                                    <img src="@produto.ImagemUrl" alt="@produto.Nome"
+                                         style="width:100%;height:100%;object-fit:cover;" />
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Sem imagem</MudText>
+                                }
+                            </div>
+
+                            <MudText Typo="Typo.h6">@produto.Nome</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Primary" Class="mt-2">
+                                @produto.Preco.ToString("C", CultureInfo.GetCultureInfo("pt-BR"))
+                            </MudText>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
+                                       StartIcon="@Icons.Material.Filled.AddShoppingCart"
+                                       OnClick="() => AdicionarAoCarrinhoAsync(produto)">
+                                Adicionar ao carrinho
+                            </MudButton>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+}
+
+@code {
+    [Parameter]
+    public int EmpresaId { get; set; }
+
+    private bool carregando = true;
+    private EmpresaCatalogoDto? empresa;
+    private string? mensagem;
+    private Severity mensagemSeverity = Severity.Info;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        carregando = true;
+        mensagem = null;
+        empresa = await AuthService.GetEmpresaCatalogoAsync(EmpresaId);
+        carregando = false;
+    }
+
+    private async Task AdicionarAoCarrinhoAsync(ProdutoCatalogoDto produto)
+    {
+        if (empresa is null)
+        {
+            return;
+        }
+
+        var resultado = await CarrinhoService.AddItemAsync(
+            empresa.Id,
+            empresa.Nome,
+            produto.Id,
+            produto.Nome,
+            produto.Preco,
+            1);
+
+        if (!resultado.Success)
+        {
+            mensagemSeverity = Severity.Warning;
+            mensagem = resultado.ErrorMessage;
+            return;
+        }
+
+        mensagemSeverity = Severity.Success;
+        mensagem = $"{produto.Nome} adicionado ao carrinho.";
+    }
+
+    private void IrParaCarrinho()
+    {
+        Navigation.NavigateTo("/carrinho");
+    }
+}

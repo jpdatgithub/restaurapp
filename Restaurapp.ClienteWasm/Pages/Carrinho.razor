@@ -1,0 +1,327 @@
+@page "/carrinho"
+@using System.Globalization
+
+@inject CarrinhoService CarrinhoService
+@inject PedidosService PedidosService
+@inject ClienteAuthService ClienteAuthService
+@inject ContaMesaEstadoService ContaMesaEstadoService
+@inject IDialogService DialogService
+@inject NavigationManager Navigation
+
+<PageTitle>Carrinho</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Carrinho</MudText>
+
+@if (carregando)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+}
+else if (!snapshot.Itens.Any())
+{
+    <MudAlert Severity="Severity.Info">Seu carrinho está vazio.</MudAlert>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" OnClick="IrParaHome">
+        Ver empresas
+    </MudButton>
+}
+else
+{
+    <MudText Typo="Typo.subtitle1" Class="mb-3">Empresa: @snapshot.EmpresaNome</MudText>
+
+    @if (!string.IsNullOrWhiteSpace(mensagem))
+    {
+        <MudAlert Severity="@mensagemSeverity" Dense="true" Class="mb-3">@mensagem</MudAlert>
+    }
+
+    <MudTable Items="snapshot.Itens" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm">
+        <HeaderContent>
+            <MudTh>Produto</MudTh>
+            <MudTh>Preço</MudTh>
+            <MudTh>Quantidade</MudTh>
+            <MudTh>Subtotal</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Produto">@context.NomeProduto</MudTd>
+            <MudTd DataLabel="Preço">@context.PrecoUnitario.ToString("C", culturaPtBr)</MudTd>
+            <MudTd DataLabel="Quantidade">
+                <MudNumericField T="int" Value="@context.Quantidade"
+                                 ValueChanged="(novaQuantidade) => AtualizarQuantidadeAsync(context.ProdutoId, novaQuantidade)" Min="1"
+                                 Max="99" Immediate="true" HideSpinButtons="false" Style="width: 100px;" />
+            </MudTd>
+            <MudTd DataLabel="Subtotal">@((context.PrecoUnitario * context.Quantidade).ToString("C", culturaPtBr))</MudTd>
+            <MudTd DataLabel="Ações">
+                <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                           OnClick="() => RemoverItemAsync(context.ProdutoId)">
+                    Remover
+                </MudButton>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+
+    <MudCard Class="mt-4">
+        <MudCardContent>
+            <MudText Typo="Typo.h6">Finalizar pedido</MudText>
+            <MudSelect T="TipoAtendimentoCheckout" Value="tipoAtendimento" ValueChanged="AoAlterarTipoAtendimento"
+                       Label="Tipo de atendimento" Variant="Variant.Outlined" Class="mt-2">
+                <MudSelectItem Value="TipoAtendimentoCheckout.Entrega">Entrega</MudSelectItem>
+                <MudSelectItem Value="TipoAtendimentoCheckout.Retirada">Takeaway (retirada no local)</MudSelectItem>
+                @if (empresaPermitePedirParaMesa)
+                {
+                    <MudSelectItem Value="TipoAtendimentoCheckout.ComerAqui">Para comer aqui</MudSelectItem>
+                }
+            </MudSelect>
+
+            @if (tipoAtendimento == TipoAtendimentoCheckout.Entrega)
+            {
+                <MudTextField T="string" @bind-Value="enderecoEntrega" Label="Endereço de entrega" Variant="Variant.Outlined"
+                              Class="mt-2" />
+            }
+
+            @if (tipoAtendimento == TipoAtendimentoCheckout.ComerAqui)
+            {
+                <MudTextField T="string" @bind-Value="numeroMesa" Label="Número da mesa" Variant="Variant.Outlined"
+                              Disabled="@ContaMesaEstadoService.PossuiContaAberta" Class="mt-2" />
+            }
+
+            <MudTextField T="string" @bind-Value="observacoes" Label="Observações" Variant="Variant.Outlined" Lines="3"
+                          Class="mt-2" />
+
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.body1"><strong>Subtotal:</strong> @snapshot.Subtotal.ToString("C", culturaPtBr)</MudText>
+            <MudText Typo="Typo.body1"><strong>Total:</strong> @snapshot.Subtotal.ToString("C", culturaPtBr)</MudText>
+
+            <MudStack Row="true" Spacing="2" Class="mt-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="FinalizarPedidoAsync"
+                           Disabled="@finalizando">
+                    @if (finalizando)
+                    {
+                        <span>Finalizando...</span>
+                    }
+                    else
+                    {
+                        <span>Finalizar pedido</span>
+                    }
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="LimparCarrinhoAsync">
+                    Limpar carrinho
+                </MudButton>
+            </MudStack>
+        </MudCardContent>
+    </MudCard>
+}
+
+@code {
+    private static readonly CultureInfo culturaPtBr = CultureInfo.GetCultureInfo("pt-BR");
+
+    private bool carregando = true;
+    private bool finalizando;
+    private string? mensagem;
+    private Severity mensagemSeverity = Severity.Info;
+    private CarrinhoSnapshot snapshot = new();
+    private TipoAtendimentoCheckout tipoAtendimento = TipoAtendimentoCheckout.Entrega;
+    private bool empresaPermitePedirParaMesa = true;
+    private string? enderecoEntrega;
+    private string? numeroMesa;
+    private string? observacoes;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ContaMesaEstadoService.AtualizarAsync();
+        await RecarregarCarrinhoAsync();
+    }
+
+    private async Task RecarregarCarrinhoAsync()
+    {
+        carregando = true;
+        snapshot = await CarrinhoService.GetSnapshotAsync();
+        await AtualizarDisponibilidadePedidoParaMesaAsync();
+        carregando = false;
+    }
+
+    private async Task AtualizarQuantidadeAsync(int produtoId, int quantidade)
+    {
+        await CarrinhoService.UpdateQuantidadeAsync(produtoId, quantidade);
+        snapshot = await CarrinhoService.GetSnapshotAsync();
+    }
+
+    private async Task RemoverItemAsync(int produtoId)
+    {
+        await CarrinhoService.RemoveItemAsync(produtoId);
+        snapshot = await CarrinhoService.GetSnapshotAsync();
+    }
+
+    private async Task LimparCarrinhoAsync()
+    {
+        await CarrinhoService.ClearAsync();
+        snapshot = await CarrinhoService.GetSnapshotAsync();
+    }
+
+    private async Task FinalizarPedidoAsync()
+    {
+        if (!snapshot.Itens.Any())
+        {
+            mensagemSeverity = Severity.Warning;
+            mensagem = "Seu carrinho está vazio.";
+            return;
+        }
+
+        if (tipoAtendimento == TipoAtendimentoCheckout.Entrega && string.IsNullOrWhiteSpace(enderecoEntrega))
+        {
+            mensagemSeverity = Severity.Warning;
+            mensagem = "Informe o endereço de entrega.";
+            return;
+        }
+
+        if (tipoAtendimento == TipoAtendimentoCheckout.ComerAqui && !empresaPermitePedirParaMesa)
+        {
+            mensagemSeverity = Severity.Warning;
+            mensagem = "Esta empresa não disponibiliza pedido para mesa no checkout.";
+            tipoAtendimento = TipoAtendimentoCheckout.Entrega;
+            numeroMesa = null;
+            return;
+        }
+
+        if (tipoAtendimento == TipoAtendimentoCheckout.ComerAqui && string.IsNullOrWhiteSpace(numeroMesa))
+        {
+            mensagemSeverity = Severity.Warning;
+            mensagem = "Informe o número da mesa para pedir para comer aqui.";
+            return;
+        }
+
+        finalizando = true;
+        mensagem = null;
+
+        if (await DeveSolicitarPagamentoAntesDoCheckoutAsync())
+        {
+            var pagamentoConcluido = await SolicitarPagamentoAntesDoCheckoutAsync();
+            if (!pagamentoConcluido)
+            {
+                finalizando = false;
+                return;
+            }
+        }
+
+        var request = new CheckoutPedidoRequest
+        {
+            EmpresaId = snapshot.EmpresaId,
+            Takeaway = tipoAtendimento == TipoAtendimentoCheckout.Retirada,
+            NumeroMesa = tipoAtendimento == TipoAtendimentoCheckout.ComerAqui ? numeroMesa?.Trim() : null,
+            EnderecoEntrega = tipoAtendimento == TipoAtendimentoCheckout.Entrega ? enderecoEntrega : null,
+            Observacoes = observacoes,
+            Itens = snapshot.Itens
+                .Select(i => new CheckoutPedidoItemRequest
+                {
+                    ProdutoId = i.ProdutoId,
+                    Quantidade = i.Quantidade
+                })
+                .ToList()
+        };
+
+        var resultado = await PedidosService.CheckoutAsync(request);
+        finalizando = false;
+
+        if (!resultado.Success || resultado.Pedido is null)
+        {
+            mensagemSeverity = Severity.Error;
+            mensagem = resultado.ErrorMessage ?? "Não foi possível finalizar o pedido.";
+            return;
+        }
+
+        await CarrinhoService.ClearAsync();
+        snapshot = await CarrinhoService.GetSnapshotAsync();
+        await ContaMesaEstadoService.AtualizarAsync();
+        Navigation.NavigateTo("/meus-pedidos");
+    }
+
+    private async Task<bool> DeveSolicitarPagamentoAntesDoCheckoutAsync()
+    {
+        if (snapshot.EmpresaId <= 0)
+        {
+            return false;
+        }
+
+        var empresa = await ClienteAuthService.GetEmpresaCatalogoAsync(snapshot.EmpresaId);
+        empresaPermitePedirParaMesa = empresa?.HabilitarContasPosPagas ?? true;
+        return empresa?.HabilitarContasPosPagas == false;
+    }
+
+    private async Task AtualizarDisponibilidadePedidoParaMesaAsync()
+    {
+        empresaPermitePedirParaMesa = true;
+
+        if (snapshot.EmpresaId <= 0)
+        {
+            return;
+        }
+
+        var empresa = await ClienteAuthService.GetEmpresaCatalogoAsync(snapshot.EmpresaId);
+        empresaPermitePedirParaMesa = empresa?.HabilitarContasPosPagas ?? true;
+
+        if (!empresaPermitePedirParaMesa && tipoAtendimento == TipoAtendimentoCheckout.ComerAqui)
+        {
+            tipoAtendimento = TipoAtendimentoCheckout.Entrega;
+            numeroMesa = null;
+        }
+    }
+
+    private async Task<bool> SolicitarPagamentoAntesDoCheckoutAsync()
+    {
+        var parameters = new DialogParameters<DialogPagamentoCheckout>
+        {
+            { x => x.EmpresaId, snapshot.EmpresaId },
+            { x => x.Total, snapshot.Subtotal }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseButton = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var dialog = await DialogService.ShowAsync<DialogPagamentoCheckout>("Formas de pagamento", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled)
+        {
+            return true;
+        }
+
+        mensagemSeverity = Severity.Info;
+        mensagem = "Pagamento não concluído. O pedido foi mantido no carrinho.";
+        return false;
+    }
+
+    private void IrParaHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private Task AoAlterarTipoAtendimento(TipoAtendimentoCheckout novoTipo)
+    {
+        if (novoTipo == TipoAtendimentoCheckout.ComerAqui && !empresaPermitePedirParaMesa)
+        {
+            mensagemSeverity = Severity.Warning;
+            mensagem = "Esta empresa não disponibiliza pedido para mesa no checkout.";
+            tipoAtendimento = TipoAtendimentoCheckout.Entrega;
+            numeroMesa = null;
+            return Task.CompletedTask;
+        }
+
+        tipoAtendimento = novoTipo;
+
+        if (novoTipo == TipoAtendimentoCheckout.ComerAqui)
+        {
+            numeroMesa = ContaMesaEstadoService.ContaAbertaAtual?.NumeroMesa;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private enum TipoAtendimentoCheckout
+    {
+        Entrega,
+        Retirada,
+        ComerAqui
+    }
+}

@@ -1,0 +1,12 @@
+.git
+.github
+.vs
+**/bin
+**/obj
+**/node_modules
+**/.DS_Store
+artifacts
+logs
+Restaurapp.BlazorServer/logs
+Restaurapp.BlazorServer/uploads
+Restaurapp.BlazorServer/.env

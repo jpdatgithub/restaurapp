@@ -1,0 +1,102 @@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Cadastrar produto</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="form" @bind-IsValid="success">
+            @if (!novaSecao)
+            {
+                <MudSelect T="string" Label="Seção" Required="true" RequiredError="Selecione uma seção."
+                           @bind-Value="secaoSelecionada">
+                    @foreach (var secao in secoesDisponiveis)
+                    {
+                        <MudSelectItem T="string" Value="@secao">@secao</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+            else
+            {
+                <MudTextField T="string" Label="Nova seção" Required="true" RequiredError="Informe a seção." MaxLength="20"
+                              Counter="20" @bind-Value="novaSecaoNome" />
+            }
+
+            <MudCheckBox T="bool" Class="mt-2" Label="Nova seção?" @bind-Value="novaSecao" />
+
+            <MudTextField T="string" Label="Nome" Required="true" RequiredError="Informe o nome do produto."
+                          Class="mt-2" @bind-Value="nome" />
+
+            <MudTextField T="string" Label="Descrição (opcional)" Class="mt-3" @bind-Value="descricao" />
+
+            <MudNumericField T="decimal?" Label="Preço" Variant="Variant.Outlined" Min="0.01m"
+                             Adornment="Adornment.Start" AdornmentText="R$" Required="true"
+                             RequiredError="Informe o preço do produto." Class="mt-3" @bind-Value="preco" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Salvar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter]
+    public List<string> SecoesDisponiveis { get; set; } = new();
+
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private MudForm? form;
+    private bool success;
+    private List<string> secoesDisponiveis = new();
+    private bool novaSecao;
+    private string? secaoSelecionada;
+    private string? novaSecaoNome;
+    private string nome = string.Empty;
+    private string descricao = string.Empty;
+    private decimal? preco;
+
+    protected override void OnInitialized()
+    {
+        secoesDisponiveis = SecoesDisponiveis
+        .Where(s => !string.IsNullOrWhiteSpace(s))
+        .Select(s => s.Trim())
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(s => s)
+        .ToList();
+
+        secaoSelecionada = secoesDisponiveis.FirstOrDefault();
+    }
+
+    private async Task Submit()
+    {
+        if (form is null)
+        {
+            return;
+        }
+
+        await form.ValidateAsync();
+
+        var secao = novaSecao
+        ? novaSecaoNome?.Trim()
+        : secaoSelecionada?.Trim();
+
+        if (!success
+        || preco is null
+        || string.IsNullOrWhiteSpace(secao)
+        || secao.Length > 20
+        || string.IsNullOrWhiteSpace(nome))
+        {
+            return;
+        }
+
+        MudDialog.Close(DialogResult.Ok(new NovoProdutoDialogResult(
+        secao,
+        nome.Trim(),
+        string.IsNullOrWhiteSpace(descricao) ? null : descricao.Trim(),
+        preco.Value)));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    public sealed record NovoProdutoDialogResult(string Secao, string Nome, string? Descricao, decimal Valor);
+}

@@ -1,0 +1,137 @@
+name: PR Deploy BlazorServer (Docker)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Ambiente de deploy
+        required: true
+        type: choice
+        options:
+          - staging
+          - prod
+        default: staging
+
+  pull_request:
+    branches:
+      - deploy/staging
+      - deploy/prod
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-deploy-${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: restaurapp/blazorserver
+
+jobs:
+  build-and-deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.draft == false }}
+    runs-on: [self-hosted, Linux, X64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 🔍 Resolve ambiente
+      - name: Resolve target
+        id: vars
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            TARGET_REF="${{ github.event.pull_request.base.ref }}"
+          elif [[ "${{ github.event.inputs.target }}" == "prod" ]]; then
+            TARGET_REF="deploy/prod"
+          else
+            TARGET_REF="deploy/staging"
+          fi
+
+          if [[ "$TARGET_REF" == "deploy/prod" ]]; then
+            ENVIRONMENT="production"
+            DEPLOY_PATH="/opt/restaurapp/production"
+          else
+            ENVIRONMENT="staging"
+            DEPLOY_PATH="/opt/restaurapp/staging"
+          fi
+
+          echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "DEPLOY_PATH=$DEPLOY_PATH" >> $GITHUB_OUTPUT
+
+      # 🐳 Build da imagem
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t restaurapp/blazorserver:${{ github.sha }} .
+
+      - name: Prepare deploy directory
+        shell: bash
+        run: |
+          set -e
+
+          DEPLOY_PATH="${{ steps.vars.outputs.DEPLOY_PATH }}"
+          ENVIRONMENT="${{ steps.vars.outputs.ENVIRONMENT }}"
+
+          # 📁 cria diretórios
+          sudo mkdir -p $DEPLOY_PATH
+          sudo mkdir -p /var/www/restaurapp/uploads-$ENVIRONMENT
+          sudo mkdir -p /var/log/restaurapp/$ENVIRONMENT
+
+          # 🔐 permissões
+          sudo chown -R $USER:$USER /opt/restaurapp
+          sudo chown -R $USER:$USER /var/www/restaurapp
+          sudo chown -R $USER:$USER /var/log/restaurapp
+
+          # 📦 define arquivo correto
+          if [ "$ENVIRONMENT" = "production" ]; then
+            COMPOSE_FILE="docker/docker-compose.production.yml"
+          else
+            COMPOSE_FILE="docker/docker-compose.staging.yml"
+          fi
+
+          # 📄 copia e normaliza nome
+          cp $COMPOSE_FILE $DEPLOY_PATH/docker-compose.yml
+
+      # 🚀 Deploy (Docker Compose)
+      - name: Deploy with Docker Compose
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          export IMAGE_TAG=${{ github.sha }}
+
+          cd ${{ steps.vars.outputs.DEPLOY_PATH }}
+
+          echo "Running database migrations..."
+          docker compose run --rm migration
+
+          echo "Starting services..."
+          docker compose up -d --remove-orphans
+
+          echo "Cleaning unused images..."
+          docker image prune -f
+
+      # 🧪 Logs em caso de erro
+      - name: Diagnostics on failure
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set +e
+          export IMAGE_TAG=${{ github.sha }}
+          cd ${{ steps.vars.outputs.DEPLOY_PATH }}
+
+          echo "Containers status:"
+          docker compose ps
+
+          echo "App logs:"
+          docker compose logs --tail=200 restaurapp-server || true
+
+          echo "Migration logs:"
+          docker compose logs --tail=200 migration || true

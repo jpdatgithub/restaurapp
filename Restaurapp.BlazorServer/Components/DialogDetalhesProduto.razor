@@ -1,0 +1,132 @@
+@using Restaurapp.BlazorServer.Models
+@using Restaurapp.BlazorServer.Services
+
+@inject ProdutoService ProdutoService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Detalhes do produto</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <div
+            style="height:160px;border:1px dashed rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;border-radius:6px;margin-bottom:12px;overflow:hidden;background:linear-gradient(135deg, rgba(255,248,238,0.9), rgba(255,255,255,1));">
+            @if (!string.IsNullOrWhiteSpace(Produto.ImagemUrl))
+            {
+                <img src="@Produto.ImagemUrl" alt="@Produto.Nome" style="width:100%;height:100%;object-fit:cover;" />
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Imagem ainda não enviada</MudText>
+            }
+        </div>
+
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3">Clique na área da imagem no card do produto para enviar ou trocar a foto.</MudText>
+
+        <MudTextField T="string" Label="Nome" Required="true" RequiredError="Informe o nome."                      Disabled="@(!modoEdicao)"
+                      @bind-Value="nome" />
+
+        <MudTextField T="string" Label="Descrição" Class="mt-3"                      Disabled="@(!modoEdicao)" @bind-Value="descricao" />
+
+        <MudNumericField T="decimal?" Label="Preço" Variant="Variant.Outlined" Min="0.01m"                         Adornment="Adornment.Start"
+                         AdornmentText="R$"                         Disabled="@(!modoEdicao)" Required="true" RequiredError="Informe o preço."                         Class="mt-3"
+                         @bind-Value="preco" />
+
+        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">Seção: @secao</MudText>
+    </DialogContent>
+
+    <DialogActions>
+        @if (!modoEdicao)
+        {
+            <MudButton Variant="Variant.Text" OnClick="Fechar">Fechar</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="AtivarEdicao">Editar</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="ExcluirAsync">Excluir</MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Text" OnClick="CancelarEdicao">Cancelar edição</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SalvarEdicaoAsync">Salvar edição</MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ExcluirAsync">Excluir</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter]
+    public Produto Produto { get; set; } = null!;
+
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private bool modoEdicao;
+    private string secao = string.Empty;
+    private string nome = string.Empty;
+    private string? descricao;
+    private decimal? preco;
+
+    protected override void OnInitialized()
+    {
+        secao = Produto.Secao;
+        nome = Produto.Nome;
+        descricao = Produto.Descricao;
+        preco = Produto.Preco;
+    }
+
+    private void AtivarEdicao()
+    {
+        modoEdicao = true;
+    }
+
+    private void CancelarEdicao()
+    {
+        modoEdicao = false;
+        secao = Produto.Secao;
+        nome = Produto.Nome;
+        descricao = Produto.Descricao;
+        preco = Produto.Preco;
+    }
+
+    private async Task SalvarEdicaoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(nome) || !preco.HasValue || preco.Value <= 0)
+        {
+            Snackbar.Add("Preencha nome e preço válidos.", Severity.Warning);
+            return;
+        }
+
+        var atualizou = await ProdutoService.AtualizarProdutoAsync(
+            Produto.Id,
+            secao,
+            nome.Trim(),
+            string.IsNullOrWhiteSpace(descricao) ? null : descricao.Trim(),
+            preco.Value);
+
+        if (!atualizou)
+        {
+            Snackbar.Add("Não foi possível editar o produto.", Severity.Error);
+            return;
+        }
+
+        MudDialog.Close(DialogResult.Ok(new ResultadoDialogoProduto(atualizou: true, excluiu: false)));
+    }
+
+    private async Task ExcluirAsync()
+    {
+        var excluiu = await ProdutoService.DeletarProdutoAsync(Produto.Id);
+        if (!excluiu)
+        {
+            Snackbar.Add("Não foi possível excluir o produto.", Severity.Error);
+            return;
+        }
+
+        MudDialog.Close(DialogResult.Ok(new ResultadoDialogoProduto(atualizou: false, excluiu: true)));
+    }
+
+    private void Fechar()
+    {
+        MudDialog.Cancel();
+    }
+
+    public sealed record ResultadoDialogoProduto(bool atualizou, bool excluiu);
+}

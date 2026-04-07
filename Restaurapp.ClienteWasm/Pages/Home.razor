@@ -1,0 +1,51 @@
+﻿@page "/"
+
+@inject ClienteAuthService AuthService
+
+<PageTitle>Home</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Empresas cadastradas</MudText>
+
+@if (carregando)
+{
+    <MudGrid>
+        @for (var i = 0; i < 6; i++)
+        {
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudSkeleton Height="110px" Width="100%" />
+            </MudItem>
+        }
+    </MudGrid>
+}
+else if (!empresas.Any())
+{
+    <MudAlert Severity="Severity.Info">Nenhuma empresa cadastrada.</MudAlert>
+}
+else
+{
+    <MudGrid>
+        @foreach (var empresa in empresas)
+        {
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudLink Href="@($"/empresa/{empresa.Id}")" Underline="Underline.None" Color="Color.Inherit">
+                    <MudCard>
+                        <MudCardContent>
+                            <MudText Typo="Typo.h6">@empresa.Nome</MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudLink>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private bool carregando = true;
+    private List<EmpresaPublicaDto> empresas = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        empresas = await AuthService.GetEmpresasAsync();
+        carregando = false;
+    }
+}

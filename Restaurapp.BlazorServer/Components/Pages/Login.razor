@@ -1,0 +1,157 @@
+@page "/login"
+@page "/Account/Login"
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.WebUtilities
+@using System
+@attribute [AllowAnonymous]
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Login</PageTitle>
+
+<div class="login-container">
+    <MudCard Class="mt-16 pa-4" Style="max-width: 400px; margin: auto;">
+        <MudCardHeader Class="d-flex justify-center">
+            <MudText Typo="Typo.h3">Login</MudText>
+        </MudCardHeader>
+
+        <MudCardContent>
+            <EditForm Model="LoginModel" OnValidSubmit="HandleLogin">
+                <DataAnnotationsValidator />
+
+                <MudTextField @bind-Value="LoginModel.Email" Label="Email" HelperText="Enter your email"
+                              Variant="Variant.Outlined" Class="mb-4" FullWidth InputType="InputType.Email" />
+                <MudText Color="Color.Error">
+                    <ValidationMessage For="() => LoginModel.Email" />
+                </MudText>
+
+                <MudTextField @bind-Value="LoginModel.Senha" Label="Senha" HelperText="Enter your password"
+                              Variant="Variant.Outlined" Class="mb-4" FullWidth InputType="InputType.Password" />
+                <MudText Color="Color.Error">
+                    <ValidationMessage For="() => LoginModel.Senha" />
+                </MudText>
+
+                <MudCheckBox @bind-Value="LoginModel.LembrarMe" Label="Lembrar-me" Class="mb-4" />
+
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth ButtonType="ButtonType.Submit"
+                           Class="mt-3" Size="Size.Large">
+                    Entrar
+                </MudButton>
+            </EditForm>
+        </MudCardContent>
+    </MudCard>
+</div>
+
+@code {
+    private LoginRequest LoginModel = new();
+    private string _returnUrl = "/";
+
+    private async Task HandleLogin()
+    {
+        try
+        {
+            // Usando fetch do JavaScript para manter os cookies
+            var loginData = new
+            {
+                email = LoginModel.Email,
+                senha = LoginModel.Senha,
+                lembrarMe = LoginModel.LembrarMe
+            };
+
+            var success = await JSRuntime.InvokeAsync<bool>("loginUser", loginData, _returnUrl);
+
+            if (!success)
+            {
+                Snackbar.Add("Email ou senha inválidos", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao fazer login: {ex.Message}", Severity.Error);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        if (query.TryGetValue("returnUrl", out var returnUrlFromQuery))
+        {
+            var candidate = returnUrlFromQuery.ToString();
+
+            if (IsLocalPath(candidate))
+            {
+                _returnUrl = candidate;
+            }
+        }
+    }
+
+    private static bool IsLocalPath(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+        url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+        url.StartsWith("//")) return false;
+        return url.StartsWith("/");
+    }
+
+    public class LoginRequest
+    {
+        [Required(ErrorMessage = "Email é obrigatório")]
+        [EmailAddress(ErrorMessage = "Email inválido")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Senha é obrigatória")]
+        [StringLength(100, MinimumLength = 6, ErrorMessage = "Senha deve ter no mínimo 6 caracteres")]
+        public string Senha { get; set; } = string.Empty;
+
+        public bool LembrarMe { get; set; }
+    }
+
+    public class ErrorResponse
+    {
+        public string Message { get; set; } = string.Empty;
+    }
+}
+
+<style>
+    .login-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        /* Ajuste a cor do fundo aqui - exemplos:
+           background: #f5f5f5; (cinza claro)
+           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); (gradiente roxo)
+           background: linear-gradient(to bottom, #0f2027, #203a43, #2c5364); (gradiente escuro)
+        */
+    }
+</style>
+
+<script>
+    window.loginUser = async function (loginData, returnUrl) {
+        try {
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(loginData),
+                credentials: 'include'
+            });
+
+            if (response.ok) {
+                window.location.href = returnUrl;
+                return true;
+            } else {
+                return false;
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            return false;
+        }
+    };
+</script>

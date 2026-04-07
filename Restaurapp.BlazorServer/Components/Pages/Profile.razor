@@ -1,0 +1,197 @@
+@page "/profile"
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.Authorization
+@using System.ComponentModel.DataAnnotations
+@attribute [Authorize]
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ISnackbar Snackbar
+
+<PageTitle>Perfil</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h3" Class="mb-4">Meu Perfil</MudText>
+
+    <MudPaper Elevation="2" Class="pa-6">
+        <MudText Typo="Typo.h5" Class="mb-4">Informações Pessoais</MudText>
+
+        @* Seção de Informações Pessoais *@
+        <MudText Typo="Typo.h6" Class="mb-3">Dados Pessoais</MudText>
+        <EditForm Model="_personalModel" OnValidSubmit="HandleUpdatePersonalInfo">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_personalModel.Nome" Label="Nome" Variant="Variant.Outlined"
+                                  For="@(() => _personalModel.Nome)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_personalModel.Email" Label="Email" Variant="Variant.Outlined"
+                                  For="@(() => _personalModel.Email)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_personalModel.Telefone" Label="Telefone" Variant="Variant.Outlined"
+                                  For="@(() => _personalModel.Telefone)" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit"
+                               Disabled="_updatingPersonal">
+                        @(_updatingPersonal ? "Salvando..." : "Salvar Alterações")
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+
+        <MudDivider Class="my-6" />
+
+        @* Seção de Mudança de Senha *@
+        <MudText Typo="Typo.h6" Class="mb-3">Alterar Senha</MudText>
+        <EditForm Model="_passwordModel" OnValidSubmit="HandleChangePassword">
+            <DataAnnotationsValidator />
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_passwordModel.SenhaAtual" Label="Senha Atual"
+                                  InputType="InputType.Password"                                  Variant="Variant.Outlined"
+                                  For="@(() => _passwordModel.SenhaAtual)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_passwordModel.NovaSenha" Label="Nova Senha"
+                                  InputType="InputType.Password"                                  Variant="Variant.Outlined"
+                                  For="@(() => _passwordModel.NovaSenha)" />
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudTextField @bind-Value="_passwordModel.ConfirmarSenha" Label="Confirmar Nova Senha"
+                                  InputType="InputType.Password" Variant="Variant.Outlined"
+                                  For="@(() => _passwordModel.ConfirmarSenha)" />
+                </MudItem>
+                <MudItem xs="12">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" ButtonType="ButtonType.Submit"
+                               Disabled="_changingPassword">
+                        @(_changingPassword ? "Alterando..." : "Alterar Senha")
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </EditForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private PersonalInfoModel _personalModel = new();
+    private ChangePasswordModel _passwordModel = new();
+    private bool _updatingPersonal = false;
+    private bool _changingPassword = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.FindByNameAsync(authState.User.Identity?.Name ?? "");
+
+        if (user != null)
+        {
+            _personalModel.Nome = user.Nome ?? "";
+            _personalModel.Email = user.Email ?? "";
+            _personalModel.Telefone = user.PhoneNumber ?? "";
+        }
+    }
+
+    private async Task HandleUpdatePersonalInfo()
+    {
+        _updatingPersonal = true;
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = await UserManager.FindByNameAsync(authState.User.Identity?.Name ?? "");
+
+            if (user != null)
+            {
+                user.Nome = _personalModel.Nome;
+                user.Email = _personalModel.Email;
+                user.UserName = _personalModel.Email;
+                user.PhoneNumber = _personalModel.Telefone;
+
+                var result = await UserManager.UpdateAsync(user);
+
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Informações atualizadas com sucesso", Severity.Success);
+                }
+                else
+                {
+                    Snackbar.Add($"Erro ao atualizar: {string.Join(", ", result.Errors.Select(e => e.Description))}", Severity.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _updatingPersonal = false;
+        }
+    }
+
+    private async Task HandleChangePassword()
+    {
+        if (_passwordModel.NovaSenha != _passwordModel.ConfirmarSenha)
+        {
+            Snackbar.Add("As senhas não coincidem", Severity.Error);
+            return;
+        }
+
+        _changingPassword = true;
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = await UserManager.FindByNameAsync(authState.User.Identity?.Name ?? "");
+
+            if (user != null)
+            {
+                var result = await UserManager.ChangePasswordAsync(user, _passwordModel.SenhaAtual, _passwordModel.NovaSenha);
+
+                if (result.Succeeded)
+                {
+                    Snackbar.Add("Senha alterada com sucesso", Severity.Success);
+                    _passwordModel = new();
+                }
+                else
+                {
+                    Snackbar.Add($"Erro ao alterar senha: {string.Join(", ", result.Errors.Select(e => e.Description))}", Severity.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _changingPassword = false;
+        }
+    }
+
+    public class PersonalInfoModel
+    {
+        [Required(ErrorMessage = "Nome é obrigatório")]
+        public string Nome { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Email é obrigatório")]
+        [EmailAddress(ErrorMessage = "Email inválido")]
+        public string Email { get; set; } = string.Empty;
+
+        [Phone(ErrorMessage = "Telefone inválido")]
+        public string Telefone { get; set; } = string.Empty;
+    }
+
+    public class ChangePasswordModel
+    {
+        [Required(ErrorMessage = "Senha atual é obrigatória")]
+        public string SenhaAtual { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Nova senha é obrigatória")]
+        [StringLength(100, MinimumLength = 6, ErrorMessage = "Senha deve ter no mínimo 6 caracteres")]
+        public string NovaSenha { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Confirmação de senha é obrigatória")]
+        public string ConfirmarSenha { get; set; } = string.Empty;
+    }
+}

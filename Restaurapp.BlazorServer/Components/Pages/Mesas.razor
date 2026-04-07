@@ -1,0 +1,930 @@
+@page "/mesas"
+@implements IAsyncDisposable
+@using System.Globalization
+@using Restaurapp.BlazorServer.Models
+@using Restaurapp.BlazorServer.Services
+
+@inject PedidoService PedidoService
+@inject CanalAtualizacaoPedidos CanalAtualizacaoPedidos
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Mesas e Contas</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">Mesas e Contas</MudText>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary">
+            @($"{mesasAgrupadasAbertas.Count} mesa(s) com conta ativa")
+        </MudChip>
+    </MudStack>
+
+    @if (carregando)
+    {
+        <MudProgressCircular Color="Color.Default" Indeterminate="true" />
+    }
+    else
+    {
+        <MudHidden Breakpoint="Breakpoint.SmAndDown">
+            <MudTabs Elevation="0" Rounded="true" @bind-ActivePanelIndex="abaAtiva">
+                <MudTabPanel Text="Mesas" Icon="@Icons.Material.Filled.TableRestaurant" />
+                <MudTabPanel Text="Contas Abertas" Icon="@Icons.Material.Filled.ReceiptLong" />
+                <MudTabPanel Text="Todas as contas" Icon="@Icons.Material.Filled.ListAlt" />
+            </MudTabs>
+        </MudHidden>
+
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <MudPaper Elevation="8" Class="pa-0" Style="position:fixed;left:0;right:0;bottom:0;z-index:1200;">
+                <MudTabs Elevation="0" Rounded="false" Position="Position.Bottom" MinimumTabWidth="20px" Centered="true"
+                         @bind-ActivePanelIndex="abaAtiva">
+                    <MudTabPanel Icon="@Icons.Material.Filled.TableRestaurant" />
+                    <MudTabPanel Icon="@Icons.Material.Filled.ReceiptLong" />
+                    <MudTabPanel Icon="@Icons.Material.Filled.ListAlt" />
+                    <MudTabPanel Icon="@Icons.Material.Filled.Info"
+                                 Disabled="@(contaDetalheSelecionada is null && mesaAgrupadaSelecionada is null)" />
+                </MudTabs>
+            </MudPaper>
+        </MudHidden>
+
+        @if (abaAtiva == 0)
+        {
+            <MudTextField T="string" @bind-Value="filtroContas" Label="Filtrar mesas por número ou cliente"
+                          Variant="Variant.Outlined" Class="mt-3" Immediate="true" />
+
+            var mesasFiltradas = ObterMesasAgrupadasFiltradas();
+
+            if (!mesasFiltradas.Any())
+            {
+                <MudText Typo="Typo.body1" Class="mt-3">Nenhuma mesa com conta ativa encontrada.</MudText>
+            }
+            else
+            {
+                <div class="mt-3" style="overflow-x: auto; overflow-y: hidden; white-space: nowrap; padding-bottom: 8px;">
+                    @foreach (var mesa in mesasFiltradas)
+                    {
+                        <MudCard Elevation="0"
+                                 Style="width: 260px; display: inline-block; vertical-align: top; cursor: pointer; margin-right: 12px;"
+                                 Class="@(mesaAgrupadaSelecionada?.NumeroMesa == mesa.NumeroMesa ? "mud-elevation-4" : string.Empty)"
+                                 @onclick="() => SelecionarMesa(mesa.NumeroMesa)">
+                            <MudCardContent>
+                                <MudText Typo="Typo.subtitle1">Mesa @mesa.NumeroMesa</MudText>
+                                <MudText Typo="Typo.caption">@mesa.Contas.Count conta(s) ativa(s)</MudText>
+                                <MudText Typo="Typo.body2" Class="mt-1">Clientes: @ObterResumoClientesMesa(mesa)</MudText>
+                                <MudText Typo="Typo.body2">Pedidos: @ObterQuantidadePedidosMesa(mesa)</MudText>
+                                <MudText Typo="Typo.body2">Total: @ObterTotalMesa(mesa).ToString("C2", culturaPtBr)</MudText>
+                            </MudCardContent>
+                        </MudCard>
+                    }
+                </div>
+
+                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                    @if (abasMesasAbertasDesktop.Any())
+                    {
+                        <MudTabs Class="mt-4" Rounded="true" Elevation="0" @bind-ActivePanelIndex="indiceAbaMesaAbertaDesktop">
+                            @foreach (var aba in abasMesasAbertasDesktop)
+                            {
+                                <MudTabPanel Text="@($"Mesa {aba.NumeroMesa}")" Icon="@Icons.Material.Filled.TableRestaurant">
+                                    <MudStack Row="true" Justify="Justify.FlexEnd" Class="mb-2">
+                                        <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                                                   OnClick="() => FecharAbaMesaAbertaDesktop(aba.NumeroMesa)">
+                                            Fechar aba
+                                        </MudButton>
+                                    </MudStack>
+                                    @RenderDetalhesMesa(aba)
+                                </MudTabPanel>
+                            }
+                        </MudTabs>
+                    }
+                </MudHidden>
+
+                <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                    @if (mesaAgrupadaSelecionada is not null)
+                    {
+                        @RenderDetalhesMesa(mesaAgrupadaSelecionada)
+                    }
+                </MudHidden>
+            }
+        }
+        else if (abaAtiva == 1)
+        {
+            <MudTextField T="string" @bind-Value="filtroTodasContas" Label="Filtrar contas abertas por mesa, cliente ou número"
+                          Variant="Variant.Outlined" Class="mt-3" Immediate="true" />
+
+            var contasFiltradas = ObterContasAbertasFiltradas();
+
+            if (!contasFiltradas.Any())
+            {
+                <MudText Typo="Typo.body1" Class="mt-3">Nenhuma conta aberta encontrada.</MudText>
+            }
+            else
+            {
+                <div class="mt-3" style="overflow-x: auto; overflow-y: hidden; white-space: nowrap; padding-bottom: 8px;">
+                    @foreach (var conta in contasFiltradas)
+                    {
+                        <MudCard Elevation="0"
+                                 Style="width: 280px; display: inline-block; vertical-align: top; cursor: pointer; margin-right: 12px;"
+                                 Class="@(contaDetalheSelecionada?.Id == conta.Id ? "mud-elevation-4" : string.Empty)"
+                                 @onclick="() => SelecionarContaParaDetalhes(conta.Id)">
+                            <MudCardContent>
+                                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                                    <MudText Typo="Typo.subtitle2">@ObterTituloConta(conta)</MudText>
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                             Color="@(conta.Status == StatusContaMesa.Aberta ? Color.Success : Color.Default)">
+                                        @(conta.Status == StatusContaMesa.Aberta ? "Aberta" : "Fechada")
+                                    </MudChip>
+                                </MudStack>
+
+                                <MudText Typo="Typo.body2">Mesa @conta.NumeroMesa</MudText>
+                                <MudText Typo="Typo.body2" Class="mt-1">Cliente: @ObterResumoClientesConta(conta)</MudText>
+                                <MudText Typo="Typo.body2">Pedidos: @ObterQuantidadePedidosConta(conta)</MudText>
+                                <MudText Typo="Typo.body2">Total: @ObterTotalConta(conta).ToString("C2", culturaPtBr)</MudText>
+                                <MudText Typo="Typo.caption">Atualizada em @conta.UpdatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudText>
+                            </MudCardContent>
+                        </MudCard>
+                    }
+                </div>
+
+                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                    @if (abasDetalhesContasDesktop.Any())
+                    {
+                        <MudTabs Class="mt-4" Rounded="true" Elevation="0" @bind-ActivePanelIndex="indiceAbaDetalheContaDesktop">
+                            @foreach (var aba in abasDetalhesContasDesktop)
+                            {
+                                <MudTabPanel Text="@ObterTituloConta(aba)" Icon="@Icons.Material.Filled.ReceiptLong">
+                                    <MudStack Row="true" Justify="Justify.FlexEnd">
+                                        <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                                                   OnClick="() => FecharAbaContaDesktop(aba.Id)">
+                                            Fechar aba
+                                        </MudButton>
+                                    </MudStack>
+                                    @RenderDetalhesConta(aba)
+                                </MudTabPanel>
+                            }
+                        </MudTabs>
+                    }
+                </MudHidden>
+
+                <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                    @if (contaDetalheSelecionada is not null)
+                    {
+                        @RenderDetalhesConta(contaDetalheSelecionada)
+                    }
+                    else
+                    {
+                        @foreach (var conta in contasFiltradas)
+                        {
+                            <MudCard Class="mt-3" Elevation="0">
+                                <MudCardContent>
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                        <div>
+                                            <MudText Typo="Typo.subtitle2">@ObterTituloConta(conta)</MudText>
+                                            <MudText Typo="Typo.body2">Mesa @conta.NumeroMesa</MudText>
+                                        </div>
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                                 Color="@(conta.Status == StatusContaMesa.Aberta ? Color.Success : Color.Default)">
+                                            @(conta.Status == StatusContaMesa.Aberta ? "Aberta" : "Fechada")
+                                        </MudChip>
+                                    </MudStack>
+                                    <MudText Typo="Typo.body2" Class="mt-2">Cliente: @ObterResumoClientesConta(conta)</MudText>
+                                    <MudText Typo="Typo.body2">Total: @ObterTotalConta(conta).ToString("C2", culturaPtBr)</MudText>
+                                    <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2">
+                                        <MudButton Variant="Variant.Text" Size="Size.Small"
+                                                   OnClick="() => SelecionarContaParaDetalhes(conta.Id)">
+                                            Ver detalhes
+                                        </MudButton>
+                                    </MudStack>
+                                </MudCardContent>
+                            </MudCard>
+                        }
+                    }
+                </MudHidden>
+            }
+        }
+        else if (abaAtiva == 2)
+        {
+            <MudTextField T="string" @bind-Value="filtroTodasContas" Label="Filtrar todas as contas por mesa, cliente ou número"
+                          Variant="Variant.Outlined" Class="mt-3" Immediate="true" />
+
+            var contasFiltradas = ObterTodasContasFiltradas();
+
+            if (!contasFiltradas.Any())
+            {
+                <MudText Typo="Typo.body1" Class="mt-3">Nenhuma conta encontrada.</MudText>
+            }
+            else
+            {
+                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                    <MudTable Items="contasFiltradas" Hover="true" Dense="true" Elevation="0" Class="mt-3">
+                        <HeaderContent>
+                            <MudTh>Conta</MudTh>
+                            <MudTh>Mesa</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Cliente</MudTh>
+                            <MudTh Style="text-align: right">Pedidos</MudTh>
+                            <MudTh Style="text-align: right">Total</MudTh>
+                            <MudTh>Aberta em</MudTh>
+                            <MudTh>Fechada em</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Conta">#@context.Id</MudTd>
+                            <MudTd DataLabel="Mesa">@context.NumeroMesa</MudTd>
+                            <MudTd DataLabel="Status">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                         Color="@(context.Status == StatusContaMesa.Aberta ? Color.Success : Color.Default)">
+                                    @(context.Status == StatusContaMesa.Aberta ? "Aberta" : "Fechada")
+                                </MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Cliente">@ObterResumoClientesConta(context)</MudTd>
+                            <MudTd DataLabel="Pedidos" Style="text-align: right">@ObterQuantidadePedidosConta(context)</MudTd>
+                            <MudTd DataLabel="Total" Style="text-align: right">@ObterTotalConta(context).ToString("C2", culturaPtBr)</MudTd>
+                            <MudTd DataLabel="Aberta em">@context.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudTd>
+                            <MudTd DataLabel="Fechada em">@(context.FechadaAtUtc.HasValue ? context.FechadaAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "-")</MudTd>
+                            <MudTd DataLabel="Ações" Style="text-align: right">
+                                <MudButton Variant="Variant.Text" Size="Size.Small"
+                                           OnClick="() => SelecionarContaParaDetalhes(context.Id)">
+                                    Ver detalhes
+                                </MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+
+                    @if (abasDetalhesContasDesktop.Any())
+                    {
+                        <MudTabs Class="mt-4" Rounded="true" Elevation="0" @bind-ActivePanelIndex="indiceAbaDetalheContaDesktop">
+                            @foreach (var aba in abasDetalhesContasDesktop)
+                            {
+                                <MudTabPanel Text="@ObterTituloConta(aba)" Icon="@Icons.Material.Filled.ReceiptLong">
+                                    <MudStack Row="true" Justify="Justify.FlexEnd">
+                                        <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
+                                                   OnClick="() => FecharAbaContaDesktop(aba.Id)">
+                                            Fechar aba
+                                        </MudButton>
+                                    </MudStack>
+                                    @RenderDetalhesConta(aba)
+                                </MudTabPanel>
+                            }
+                        </MudTabs>
+                    }
+                </MudHidden>
+
+                <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                    <MudTable Items="contasFiltradas" Hover="true" Dense="true" Elevation="0" Class="mt-3">
+                        <HeaderContent>
+                            <MudTh>Conta</MudTh>
+                            <MudTh>Mesa</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Cliente</MudTh>
+                            <MudTh Style="text-align: right">Pedidos</MudTh>
+                            <MudTh Style="text-align: right">Total</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Conta">#@context.Id</MudTd>
+                            <MudTd DataLabel="Mesa">@context.NumeroMesa</MudTd>
+                            <MudTd DataLabel="Status">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                         Color="@(context.Status == StatusContaMesa.Aberta ? Color.Success : Color.Default)">
+                                    @(context.Status == StatusContaMesa.Aberta ? "Aberta" : "Fechada")
+                                </MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Cliente">@ObterResumoClientesConta(context)</MudTd>
+                            <MudTd DataLabel="Pedidos" Style="text-align: right">@ObterQuantidadePedidosConta(context)</MudTd>
+                            <MudTd DataLabel="Total" Style="text-align: right">@ObterTotalConta(context).ToString("C2", culturaPtBr)</MudTd>
+                            <MudTd DataLabel="Ações" Style="text-align: right">
+                                <MudButton Variant="Variant.Text" Size="Size.Small"
+                                           OnClick="() => SelecionarContaParaDetalhes(context.Id)">
+                                    Ver detalhes
+                                </MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudHidden>
+            }
+        }
+        else
+        {
+            @if (contaDetalheSelecionada is not null)
+            {
+                @RenderDetalhesConta(contaDetalheSelecionada)
+            }
+            else if (mesaAgrupadaSelecionada is not null)
+            {
+                @RenderDetalhesMesa(mesaAgrupadaSelecionada)
+            }
+            else
+            {
+                <MudText Typo="Typo.body1" Class="mt-3">Selecione uma mesa ou conta para ver os detalhes.</MudText>
+            }
+        }
+
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <div style="height:72px;"></div>
+        </MudHidden>
+    }
+</MudContainer>
+
+@code {
+    private static readonly CultureInfo culturaPtBr = CultureInfo.GetCultureInfo("pt-BR");
+
+    private bool carregando = true;
+    private bool pagandoContaMesa;
+    private int abaAtiva;
+    private int indiceAbaMesaAbertaDesktop;
+    private int indiceAbaDetalheContaDesktop;
+    private string filtroContas = string.Empty;
+    private string filtroTodasContas = string.Empty;
+    private const int limiteAbasDetalhesDesktop = 5;
+
+    private List<ContaMesa> mesasEmAberto = new();
+    private List<ContaMesa> todasContas = new();
+    private List<MesaAgrupadaViewModel> mesasAgrupadasAbertas = new();
+    private List<MesaAgrupadaViewModel> abasMesasAbertasDesktop = new();
+    private List<ContaMesa> abasDetalhesContasDesktop = new();
+
+    private MesaAgrupadaViewModel? mesaAgrupadaSelecionada;
+    private ContaMesa? contaDetalheSelecionada;
+    private Func<AtualizacaoPedidoNotificacao, Task>? _assinaturaAtualizacao;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _assinaturaAtualizacao = async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await CarregarContasAsync();
+                StateHasChanged();
+            });
+        };
+
+        CanalAtualizacaoPedidos.PedidoAtualizado += _assinaturaAtualizacao;
+        await CarregarContasAsync();
+    }
+
+    private async Task CarregarContasAsync()
+    {
+        carregando = true;
+
+        try
+        {
+            mesasEmAberto = (await PedidoService.ObterMesasEmAbertoAsync())
+                .OrderByDescending(c => c.UpdatedAtUtc)
+                .ThenByDescending(c => c.CreatedAtUtc)
+                .ToList();
+
+            todasContas = (await PedidoService.ObterTodasContasMesaAsync())
+                .OrderByDescending(c => c.UpdatedAtUtc)
+                .ThenByDescending(c => c.CreatedAtUtc)
+                .ToList();
+
+            mesasAgrupadasAbertas = CriarMesasAgrupadas(mesasEmAberto);
+
+            if (mesaAgrupadaSelecionada is not null)
+            {
+                mesaAgrupadaSelecionada = mesasAgrupadasAbertas
+                    .FirstOrDefault(m => string.Equals(m.NumeroMesa, mesaAgrupadaSelecionada.NumeroMesa, StringComparison.OrdinalIgnoreCase));
+            }
+
+            abasMesasAbertasDesktop = abasMesasAbertasDesktop
+                .Select(aba => mesasAgrupadasAbertas
+                    .FirstOrDefault(m => string.Equals(m.NumeroMesa, aba.NumeroMesa, StringComparison.OrdinalIgnoreCase)))
+                .Where(m => m is not null)
+                .Cast<MesaAgrupadaViewModel>()
+                .ToList();
+
+            if (indiceAbaMesaAbertaDesktop >= abasMesasAbertasDesktop.Count)
+            {
+                indiceAbaMesaAbertaDesktop = Math.Max(0, abasMesasAbertasDesktop.Count - 1);
+            }
+
+            if (contaDetalheSelecionada is not null)
+            {
+                contaDetalheSelecionada = await PedidoService.ObterContaMesaDetalhadaAsync(contaDetalheSelecionada.Id);
+            }
+
+            var abasAtualizadas = new List<ContaMesa>();
+            foreach (var aba in abasDetalhesContasDesktop)
+            {
+                var contaAtualizada = await PedidoService.ObterContaMesaDetalhadaAsync(aba.Id);
+                if (contaAtualizada is not null)
+                {
+                    abasAtualizadas.Add(contaAtualizada);
+                }
+            }
+
+            abasDetalhesContasDesktop = abasAtualizadas;
+            if (indiceAbaDetalheContaDesktop >= abasDetalhesContasDesktop.Count)
+            {
+                indiceAbaDetalheContaDesktop = Math.Max(0, abasDetalhesContasDesktop.Count - 1);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao carregar contas: {ex.Message}", Severity.Error);
+            mesasEmAberto = new List<ContaMesa>();
+            todasContas = new List<ContaMesa>();
+            mesasAgrupadasAbertas = new List<MesaAgrupadaViewModel>();
+            abasMesasAbertasDesktop = new List<MesaAgrupadaViewModel>();
+            abasDetalhesContasDesktop = new List<ContaMesa>();
+            mesaAgrupadaSelecionada = null;
+            contaDetalheSelecionada = null;
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    private void SelecionarMesa(string numeroMesa)
+    {
+        mesaAgrupadaSelecionada = mesasAgrupadasAbertas
+            .FirstOrDefault(m => string.Equals(m.NumeroMesa, numeroMesa, StringComparison.OrdinalIgnoreCase));
+
+        if (mesaAgrupadaSelecionada is not null)
+        {
+            AbrirOuAtivarAbaMesaAbertaDesktop(mesaAgrupadaSelecionada);
+        }
+
+        abaAtiva = 0;
+    }
+
+    private void AbrirOuAtivarAbaMesaAbertaDesktop(MesaAgrupadaViewModel mesa)
+    {
+        var indiceExistente = abasMesasAbertasDesktop.FindIndex(m =>
+            string.Equals(m.NumeroMesa, mesa.NumeroMesa, StringComparison.OrdinalIgnoreCase));
+
+        if (indiceExistente >= 0)
+        {
+            abasMesasAbertasDesktop[indiceExistente] = mesa;
+            indiceAbaMesaAbertaDesktop = indiceExistente;
+            return;
+        }
+
+        if (abasMesasAbertasDesktop.Count >= limiteAbasDetalhesDesktop)
+        {
+            Snackbar.Add("Você atingiu o limite de 5 abas de mesas. Feche uma aba para abrir outra.", Severity.Warning);
+            return;
+        }
+
+        abasMesasAbertasDesktop.Add(mesa);
+        indiceAbaMesaAbertaDesktop = abasMesasAbertasDesktop.Count - 1;
+    }
+
+    private void FecharAbaMesaAbertaDesktop(string numeroMesa)
+    {
+        var indiceRemovido = abasMesasAbertasDesktop.FindIndex(m =>
+            string.Equals(m.NumeroMesa, numeroMesa, StringComparison.OrdinalIgnoreCase));
+
+        if (indiceRemovido < 0)
+        {
+            return;
+        }
+
+        abasMesasAbertasDesktop.RemoveAt(indiceRemovido);
+
+        if (!abasMesasAbertasDesktop.Any())
+        {
+            indiceAbaMesaAbertaDesktop = 0;
+            return;
+        }
+
+        if (indiceAbaMesaAbertaDesktop > indiceRemovido)
+        {
+            indiceAbaMesaAbertaDesktop -= 1;
+            return;
+        }
+
+        if (indiceAbaMesaAbertaDesktop >= abasMesasAbertasDesktop.Count)
+        {
+            indiceAbaMesaAbertaDesktop = abasMesasAbertasDesktop.Count - 1;
+        }
+    }
+
+    private async Task SelecionarContaParaDetalhes(int contaMesaId)
+    {
+        var conta = await PedidoService.ObterContaMesaDetalhadaAsync(contaMesaId);
+        if (conta is null)
+        {
+            Snackbar.Add("A conta selecionada não possui mais pedidos ativos.", Severity.Info);
+            if (contaDetalheSelecionada?.Id == contaMesaId)
+            {
+                contaDetalheSelecionada = null;
+            }
+            return;
+        }
+
+        contaDetalheSelecionada = conta;
+        AbrirOuAtivarAbaDetalheContaDesktop(conta);
+    }
+
+    private void AbrirOuAtivarAbaDetalheContaDesktop(ContaMesa conta)
+    {
+        var indiceExistente = abasDetalhesContasDesktop.FindIndex(c => c.Id == conta.Id);
+        if (indiceExistente >= 0)
+        {
+            abasDetalhesContasDesktop[indiceExistente] = conta;
+            indiceAbaDetalheContaDesktop = indiceExistente;
+            return;
+        }
+
+        if (abasDetalhesContasDesktop.Count >= limiteAbasDetalhesDesktop)
+        {
+            Snackbar.Add("Você atingiu o limite de 5 abas de detalhes de contas. Feche uma aba para abrir outra.", Severity.Warning);
+            return;
+        }
+
+        abasDetalhesContasDesktop.Add(conta);
+        indiceAbaDetalheContaDesktop = abasDetalhesContasDesktop.Count - 1;
+    }
+
+    private void FecharAbaContaDesktop(int contaId)
+    {
+        var indiceRemovido = abasDetalhesContasDesktop.FindIndex(c => c.Id == contaId);
+        if (indiceRemovido < 0)
+        {
+            return;
+        }
+
+        abasDetalhesContasDesktop.RemoveAt(indiceRemovido);
+
+        if (!abasDetalhesContasDesktop.Any())
+        {
+            indiceAbaDetalheContaDesktop = 0;
+            return;
+        }
+
+        if (indiceAbaDetalheContaDesktop > indiceRemovido)
+        {
+            indiceAbaDetalheContaDesktop -= 1;
+            return;
+        }
+
+        if (indiceAbaDetalheContaDesktop >= abasDetalhesContasDesktop.Count)
+        {
+            indiceAbaDetalheContaDesktop = abasDetalhesContasDesktop.Count - 1;
+        }
+    }
+
+    private RenderFragment RenderDetalhesMesa(MesaAgrupadaViewModel mesa) => @<MudCard Class="mt-4" Elevation="0">
+        <MudCardContent>
+            <MudText Typo="Typo.h6">Mesa @mesa.NumeroMesa</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                @mesa.Contas.Count conta(s) ativa(s) • @ObterQuantidadePedidosMesa(mesa) pedido(s)
+            </MudText>
+
+            @foreach (var conta in mesa.Contas.OrderByDescending(c => c.UpdatedAtUtc).ThenByDescending(c => c.CreatedAtUtc))
+            {
+                <MudPaper Elevation="0" Class="pa-3 mt-3">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                        <div>
+                            <MudText Typo="Typo.subtitle2">@ObterTituloConta(conta)</MudText>
+                            <MudText Typo="Typo.caption">
+                                Aberta em @conta.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                            </MudText>
+                        </div>
+                        <MudStack Row="true" Justify="Justify.FlexEnd">
+                            <MudButton Variant="Variant.Text" Size="Size.Small"
+                                       OnClick="() => SelecionarContaParaDetalhes(conta.Id)">
+                                Detalhes da conta
+                            </MudButton>
+                            @if (conta.Status == StatusContaMesa.Aberta)
+                            {
+                                <MudButton Variant="Variant.Text" Color="Color.Success" Size="Size.Small"
+                                           Disabled="@pagandoContaMesa"
+                                           OnClick="() => PagarContaMesaAsync(conta.Id)">
+                                    @(pagandoContaMesa ? "Processando..." : "Pagar")
+                                </MudButton>
+                            }
+                        </MudStack>
+                    </MudStack>
+
+                    @RenderConteudoPedidosConta(conta)
+                </MudPaper>
+            }
+
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.h6" Align="Align.Right">Total da mesa: @ObterTotalMesa(mesa).ToString("C2", culturaPtBr)</MudText>
+        </MudCardContent>
+    </MudCard>;
+
+    private RenderFragment RenderDetalhesConta(ContaMesa conta) => @<MudCard Class="mt-3" Elevation="0">
+        <MudCardContent>
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start">
+                <div>
+                    <MudText Typo="Typo.h6">@ObterTituloConta(conta)</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Mesa @conta.NumeroMesa • @(conta.Status == StatusContaMesa.Aberta ? "Aberta" : "Fechada")
+                    </MudText>
+                    <MudText Typo="Typo.body2" Class="mt-2">Cliente: @ObterResumoClientesConta(conta)</MudText>
+                    <MudText Typo="Typo.body2">Abertura: @conta.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudText>
+                    <MudText Typo="Typo.body2">Fechamento: @(conta.FechadaAtUtc.HasValue ? conta.FechadaAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "-")</MudText>
+                </div>
+
+                @if (conta.Status == StatusContaMesa.Aberta)
+                {
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="@pagandoContaMesa"
+                               OnClick="() => PagarContaMesaAsync(conta.Id)">
+                        @(pagandoContaMesa ? "Processando..." : "Pagar conta")
+                    </MudButton>
+                }
+            </MudStack>
+
+            @RenderConteudoPedidosConta(conta)
+
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.h6" Align="Align.Right">Total da conta: @ObterTotalConta(conta).ToString("C2", culturaPtBr)</MudText>
+        </MudCardContent>
+    </MudCard>;
+
+    private RenderFragment RenderConteudoPedidosConta(ContaMesa conta) => @<div>
+        @if (!ObterPedidosOrdenados(conta).Any())
+        {
+            <MudText Typo="Typo.body2" Class="mt-2">Nenhum pedido ativo vinculado a esta conta.</MudText>
+        }
+        else
+        {
+            @foreach (var pedidoConta in ObterPedidosOrdenados(conta))
+            {
+                <MudPaper Elevation="0" Class="pa-3 mt-3">
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                        <MudText Typo="Typo.subtitle2">Pedido #@pedidoConta.Id</MudText>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                            @FormatarStatusParaExibicao(pedidoConta)
+                        </MudChip>
+                    </MudStack>
+                    <MudText Typo="Typo.caption">@pedidoConta.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudText>
+                    <MudText Typo="Typo.body2">Cliente: @pedidoConta.NomeClienteSnapshot</MudText>
+
+                    <MudTable Items="pedidoConta.Itens" Dense="true" Hover="true" Elevation="0" Class="mt-2">
+                        <HeaderContent>
+                            <MudTh>Item</MudTh>
+                            <MudTh Style="text-align: right">Qtd</MudTh>
+                            <MudTh Style="text-align: right">Subtotal</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Item">@context.NomeProdutoSnapshot</MudTd>
+                            <MudTd DataLabel="Qtd" Style="text-align: right">@context.Quantidade</MudTd>
+                            <MudTd DataLabel="Subtotal" Style="text-align: right">@context.SubtotalItem.ToString("C2", culturaPtBr)</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+
+                    <MudText Typo="Typo.body2" Align="Align.Right">Total do pedido: @pedidoConta.Total.ToString("C2", culturaPtBr)</MudText>
+                </MudPaper>
+            }
+        }
+    </div>;
+
+    private async Task PagarContaMesaAsync(int contaMesaId)
+    {
+        if (pagandoContaMesa)
+        {
+            return;
+        }
+
+        pagandoContaMesa = true;
+
+        try
+        {
+            var conta = await PedidoService.ObterContaMesaDetalhadaAsync(contaMesaId);
+            if (conta is null)
+            {
+                Snackbar.Add("Não foi possível localizar a conta selecionada.", Severity.Warning);
+                return;
+            }
+
+            var totalConta = ObterTotalConta(conta);
+            if (totalConta <= 0)
+            {
+                Snackbar.Add("Não há itens pendentes para pagamento nesta conta.", Severity.Info);
+                return;
+            }
+
+            var dialog = await DialogService.ShowAsync<ConfirmarPagamentoDialog>(
+                "Confirmar pagamento",
+                options: new DialogOptions
+                {
+                    CloseOnEscapeKey = true,
+                    MaxWidth = MaxWidth.ExtraSmall,
+                    FullWidth = true,
+                    BackdropClick = false
+                });
+
+            var confirmarPagamento = await dialog.Result;
+            if (confirmarPagamento is null || confirmarPagamento.Canceled)
+            {
+                return;
+            }
+
+            var pagamentoRegistrado = await PedidoService.FecharContaMesaAsync(contaMesaId);
+            if (!pagamentoRegistrado)
+            {
+                Snackbar.Add("Não foi possível confirmar o pagamento desta conta.", Severity.Error);
+                return;
+            }
+
+            if (contaDetalheSelecionada?.Id == contaMesaId)
+            {
+                contaDetalheSelecionada = null;
+            }
+
+            Snackbar.Add("Pagamento confirmado com sucesso.", Severity.Success);
+            await CarregarContasAsync();
+        }
+        finally
+        {
+            pagandoContaMesa = false;
+        }
+    }
+
+    private List<MesaAgrupadaViewModel> ObterMesasAgrupadasFiltradas()
+    {
+        var mesas = mesasAgrupadasAbertas;
+
+        if (string.IsNullOrWhiteSpace(filtroContas))
+        {
+            return mesas;
+        }
+
+        var termo = filtroContas.Trim();
+
+        return mesas
+            .Where(m =>
+                m.NumeroMesa.Contains(termo, StringComparison.OrdinalIgnoreCase)
+                || ObterResumoClientesMesa(m).Contains(termo, StringComparison.OrdinalIgnoreCase)
+                || m.Contas.Any(c => c.Id.ToString().Contains(termo, StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(m => m.UpdatedAtUtc)
+            .ThenBy(m => m.NumeroMesa)
+            .ToList();
+    }
+
+    private List<ContaMesa> ObterContasAbertasFiltradas()
+    {
+        return ObterContasFiltradas(StatusContaMesa.Aberta);
+    }
+
+    private List<ContaMesa> ObterTodasContasFiltradas()
+    {
+        return ObterContasFiltradas();
+    }
+
+    private List<ContaMesa> ObterContasFiltradas(StatusContaMesa? status = null)
+    {
+        var contasBase = todasContas.AsEnumerable();
+
+        if (status.HasValue)
+        {
+            contasBase = contasBase.Where(c => c.Status == status.Value);
+        }
+
+        if (string.IsNullOrWhiteSpace(filtroTodasContas))
+        {
+            return contasBase
+                .OrderByDescending(c => c.UpdatedAtUtc)
+                .ThenByDescending(c => c.CreatedAtUtc)
+                .ToList();
+        }
+
+        var termo = filtroTodasContas.Trim();
+
+        return contasBase
+            .Where(c =>
+                c.NumeroMesa.Contains(termo, StringComparison.OrdinalIgnoreCase)
+                || c.Id.ToString().Contains(termo, StringComparison.OrdinalIgnoreCase)
+                || ObterResumoClientesConta(c).Contains(termo, StringComparison.OrdinalIgnoreCase)
+                || ObterTituloConta(c).Contains(termo, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(c => c.UpdatedAtUtc)
+            .ThenByDescending(c => c.CreatedAtUtc)
+            .ToList();
+    }
+
+    private static List<MesaAgrupadaViewModel> CriarMesasAgrupadas(IEnumerable<ContaMesa> contas)
+    {
+        return contas
+            .GroupBy(c => c.NumeroMesa, StringComparer.OrdinalIgnoreCase)
+            .Select(grupo => new MesaAgrupadaViewModel
+            {
+                NumeroMesa = grupo.First().NumeroMesa,
+                Contas = grupo
+                    .OrderByDescending(c => c.UpdatedAtUtc)
+                    .ThenByDescending(c => c.CreatedAtUtc)
+                    .ToList(),
+                UpdatedAtUtc = grupo.Max(c => c.UpdatedAtUtc)
+            })
+            .OrderByDescending(m => m.UpdatedAtUtc)
+            .ThenBy(m => m.NumeroMesa)
+            .ToList();
+    }
+
+    private static List<Pedido> ObterPedidosOrdenados(ContaMesa conta)
+    {
+        return conta.Pedidos
+            .Where(p => p.Status != StatusPedido.Cancelado && p.Status != StatusPedido.Criado)
+            .OrderBy(p => p.CreatedAtUtc)
+            .ToList();
+    }
+
+    private static int ObterQuantidadePedidosConta(ContaMesa conta)
+    {
+        return ObterPedidosOrdenados(conta).Count;
+    }
+
+    private static decimal ObterTotalConta(ContaMesa conta)
+    {
+        return conta.Pedidos
+            .Where(p => p.Status != StatusPedido.Cancelado)
+            .Sum(p => p.Total);
+    }
+
+    private static int ObterQuantidadePedidosMesa(MesaAgrupadaViewModel mesa)
+    {
+        return mesa.Contas.Sum(ObterQuantidadePedidosConta);
+    }
+
+    private static decimal ObterTotalMesa(MesaAgrupadaViewModel mesa)
+    {
+        return mesa.Contas.Sum(ObterTotalConta);
+    }
+
+    private static string ObterResumoClientesMesa(MesaAgrupadaViewModel mesa)
+    {
+        var nomes = mesa.Contas
+            .Select(ObterNomePrincipalConta)
+            .Where(n => !string.IsNullOrWhiteSpace(n) && n != "-")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(3)
+            .ToList();
+
+        if (!nomes.Any())
+        {
+            return "-";
+        }
+
+        var resumo = string.Join(", ", nomes);
+        var totalNomes = mesa.Contas
+            .Select(ObterNomePrincipalConta)
+            .Where(n => !string.IsNullOrWhiteSpace(n) && n != "-")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+
+        return totalNomes > nomes.Count ? $"{resumo}..." : resumo;
+    }
+
+    private static string ObterResumoClientesConta(ContaMesa conta)
+    {
+        return ObterNomePrincipalConta(conta);
+    }
+
+    private static string ObterTituloConta(ContaMesa conta)
+    {
+        var nomePrincipal = ObterNomePrincipalConta(conta);
+
+        return string.IsNullOrWhiteSpace(nomePrincipal) || nomePrincipal == "-"
+            ? $"Conta #{conta.Id}"
+            : $"Conta de {nomePrincipal}";
+    }
+
+    private static string ObterNomePrincipalConta(ContaMesa conta)
+    {
+        var nomePrincipal = ObterPedidosOrdenados(conta)
+            .Select(p => p.NomeClienteSnapshot?.Trim())
+            .FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
+
+        return string.IsNullOrWhiteSpace(nomePrincipal) ? "-" : nomePrincipal;
+    }
+
+    private static string FormatarStatusParaExibicao(Pedido pedido)
+    {
+        if (pedido.TipoAtendimento == TipoAtendimentoPedido.ComerAqui && pedido.Status == StatusPedido.Enviado)
+        {
+            return "Saiu para a mesa";
+        }
+
+        return pedido.Status switch
+        {
+            StatusPedido.Criado => "Criado",
+            StatusPedido.Confirmado => "Confirmado",
+            StatusPedido.EmPreparacao => "Em preparação",
+            StatusPedido.Enviado => "Enviado",
+            StatusPedido.Concluido => "Concluído",
+            StatusPedido.Cancelado => "Cancelado",
+            _ => pedido.Status.ToString()
+        };
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        if (_assinaturaAtualizacao is not null)
+        {
+            CanalAtualizacaoPedidos.PedidoAtualizado -= _assinaturaAtualizacao;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private sealed class MesaAgrupadaViewModel
+    {
+        public string NumeroMesa { get; set; } = string.Empty;
+        public List<ContaMesa> Contas { get; set; } = new();
+        public DateTime UpdatedAtUtc { get; set; }
+    }
+}

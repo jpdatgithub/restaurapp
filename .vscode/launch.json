@@ -1,0 +1,15 @@
+{
+    "configurations": [
+        {
+            "name": "C#: Launch Startup Project",
+            "type": "dotnet",
+            "request": "launch"
+        },
+        {
+            "name": "BlazorServer: Debug Apenas Servidor",
+            "type": "dotnet",
+            "request": "launch",
+            "projectPath": "${workspaceFolder}/Restaurapp.BlazorServer/Restaurapp.BlazorServer.csproj"
+        }
+    ]
+}

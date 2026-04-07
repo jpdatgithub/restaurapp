@@ -1,0 +1,384 @@
+@page "/cardapio"
+@using Microsoft.AspNetCore.Components.Forms
+@using Restaurapp.BlazorServer.Models
+@using Restaurapp.BlazorServer.Services
+@using MudBlazor
+
+@inject ProdutoService ProdutoService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Cardápio</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">Cardápio</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AbrirDialogCadastrarProduto">
+            Cadastrar produto
+        </MudButton>
+    </MudStack>
+
+    @if (produtos is null)
+    {
+        <MudProgressCircular Color="Color.Default" Indeterminate="true" />
+    }
+    else if (produtos.Count == 0)
+    {
+        <MudText Typo="Typo.body1">Nenhum produto cadastrado.</MudText>
+    }
+    else
+    {
+        @foreach (var secao in secoes)
+        {
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.h5" Class="mb-3">@secao</MudText>
+
+            <div class="secao-scroll-horizontal">
+                @foreach (var produto in produtosPorSecao[secao])
+                {
+                    <MudCard Elevation="1" Class="card-produto" @onclick="() => AbrirDialogDetalhesProdutoAsync(produto)">
+                        <MudCardContent>
+                            <div class="card-produto-imagem-area" @onclick:stopPropagation="true">
+                                <label class="card-produto-imagem-label @(produtoIdEmUpload == produto.Id ? "uploading" : string.Empty)"
+                                       for="@ObterInputImagemId(produto.Id)">
+                                    @if (produtoIdEmUpload == produto.Id)
+                                    {
+                                        <MudProgressCircular Class="card-produto-upload-loader" Indeterminate="true" Size="Size.Large" Color="Color.Primary" />
+                                        <MudText Typo="Typo.caption" Class="mt-2">Enviando imagem...</MudText>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(produto.ImagemUrl))
+                                    {
+                                        <img src="@produto.ImagemUrl" alt="@produto.Nome" class="card-produto-imagem" />
+                                        <div class="card-produto-imagem-overlay">
+                                            <MudText Typo="Typo.caption">Trocar imagem</MudText>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" Size="Size.Large" Color="Color.Primary" />
+                                        <MudText Typo="Typo.caption" Class="mt-2">Clique para enviar imagem</MudText>
+                                    }
+                                </label>
+
+                                <InputFile id="@ObterInputImagemId(produto.Id)"
+                                           class="card-produto-imagem-input"
+                                           accept=".jpg,.jpeg,.png,.webp"
+                                           OnChange="@(args => UploadImagemProdutoAsync(produto, args))"
+                                           multiple="false" />
+                            </div>
+
+                            <MudText Typo="Typo.h6">@produto.Nome</MudText>
+                            <MudText Typo="Typo.subtitle2" Color="Color.Primary">@produto.Preco.ToString("C2")</MudText>
+
+                            <MudText Typo="Typo.body2" Class="descricao-clipada mt-2">@(string.IsNullOrWhiteSpace(produto.Descricao)
+                                                                                                                    ? "Sem descrição" : produto.Descricao)</MudText>
+                            </MudCardContent>
+                        </MudCard>
+                    }
+                </div>
+            }
+        }
+    </MudContainer>
+
+    <style>
+        .secao-scroll-horizontal {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 16px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 4px 2px 10px 2px;
+            cursor: grab;
+            user-select: none;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+        }
+
+        .secao-scroll-horizontal.dragging {
+            cursor: grabbing;
+        }
+
+        .card-produto {
+            width: 280px;
+            min-width: 280px;
+            flex: 0 0 auto;
+            cursor: pointer;
+        }
+
+        .card-produto-imagem-area {
+            margin-bottom: 10px;
+        }
+
+        .card-produto-imagem-label {
+            position: relative;
+            height: 120px;
+            border: 1px dashed rgba(0,0,0,0.25);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            overflow: hidden;
+            cursor: pointer;
+            background: linear-gradient(135deg, rgba(255, 248, 238, 0.9), rgba(255, 255, 255, 1));
+        }
+
+        .card-produto-imagem-label.uploading {
+            cursor: wait;
+        }
+
+        .card-produto-imagem-input {
+            display: none;
+        }
+
+        .card-produto-imagem {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .card-produto-imagem-overlay {
+            position: absolute;
+            inset: auto 0 0 0;
+            padding: 8px;
+            color: white;
+            text-align: center;
+            background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.68));
+        }
+
+        .card-produto-upload-loader {
+            z-index: 1;
+        }
+
+        .descricao-clipada {
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            -webkit-box-orient: vertical;
+            min-height: 60px;
+        }
+    </style>
+
+    <script>
+        window.cardapioEnableHorizontalDrag = function () {
+            const areas = document.querySelectorAll('.secao-scroll-horizontal');
+            areas.forEach((area) => {
+                if (area.dataset.dragReady === '1') {
+                    return;
+                }
+
+                area.dataset.dragReady = '1';
+                let isDown = false;
+                let startX = 0;
+                let startScrollLeft = 0;
+
+                const start = (clientX) => {
+                    isDown = true;
+                    area.classList.add('dragging');
+                    startX = clientX;
+                    startScrollLeft = area.scrollLeft;
+                };
+
+                const move = (clientX) => {
+                    if (!isDown) {
+                        return;
+                    }
+
+                    const delta = clientX - startX;
+                    area.scrollLeft = startScrollLeft - delta;
+                };
+
+                const end = () => {
+                    isDown = false;
+                    area.classList.remove('dragging');
+                };
+
+                area.addEventListener('mousedown', (e) => {
+                    start(e.clientX);
+                });
+
+                area.addEventListener('mousemove', (e) => {
+                    move(e.clientX);
+                });
+
+                area.addEventListener('mouseleave', end);
+                area.addEventListener('mouseup', end);
+
+                area.addEventListener('touchstart', (e) => {
+                    if (e.touches.length > 0) {
+                        start(e.touches[0].clientX);
+                    }
+                }, { passive: true });
+
+                area.addEventListener('touchmove', (e) => {
+                    if (e.touches.length > 0) {
+                        move(e.touches[0].clientX);
+                    }
+                }, { passive: true });
+
+                area.addEventListener('touchend', end, { passive: true });
+                area.addEventListener('touchcancel', end, { passive: true });
+            });
+        };
+    </script>
+
+@code {
+    private List<Produto>? produtos;
+    private Dictionary<string, List<Produto>> produtosPorSecao = new(StringComparer.OrdinalIgnoreCase);
+    private List<string> secoes = new();
+    private int? produtoIdEmUpload;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarProdutosAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await JSRuntime.InvokeVoidAsync("cardapioEnableHorizontalDrag");
+    }
+
+    private async Task CarregarProdutosAsync()
+    {
+        produtos = await ProdutoService.ObterProdutosAsync();
+
+        produtosPorSecao = produtos
+            .GroupBy(p => string.IsNullOrWhiteSpace(p.Secao) ? "Sem seção" : p.Secao.Trim())
+            .OrderBy(g => g.Key)
+            .ToDictionary(g => g.Key, g => g.OrderBy(p => p.Nome).ToList(), StringComparer.OrdinalIgnoreCase);
+
+        secoes = produtosPorSecao.Keys.ToList();
+    }
+
+    private async Task UploadImagemProdutoAsync(Produto produto, InputFileChangeEventArgs args)
+    {
+        var arquivo = args.File;
+
+        if (arquivo is null)
+        {
+            return;
+        }
+
+        produtoIdEmUpload = produto.Id;
+
+        try
+        {
+            await using var stream = arquivo.OpenReadStream(5 * 1024 * 1024);
+            var produtoAtualizado = await ProdutoService.AtualizarImagemProdutoAsync(produto.Id, arquivo.Name, stream);
+
+            if (produtoAtualizado is null)
+            {
+                Snackbar.Add("Produto não encontrado para upload da imagem.", Severity.Error);
+                return;
+            }
+
+            produto.ImagemUrl = produtoAtualizado.ImagemUrl;
+            Snackbar.Add("Imagem enviada com sucesso!", Severity.Success);
+        }
+        catch (IOException)
+        {
+            Snackbar.Add("A imagem excede o limite de 5 MB.", Severity.Warning);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao enviar imagem: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            produtoIdEmUpload = null;
+        }
+    }
+
+    private static string ObterInputImagemId(int produtoId) => $"upload-produto-{produtoId}";
+
+    private async Task AbrirDialogCadastrarProduto()
+    {
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            BackdropClick = false
+        };
+
+        var secoesExistentes = await ProdutoService.ObterSecoesAsync();
+        var parametros = new DialogParameters<DialogCadastrarProduto>
+        {
+            { x => x.SecoesDisponiveis, secoesExistentes }
+        };
+
+        var dialog = await DialogService.ShowAsync<DialogCadastrarProduto>("Cadastrar produto", parametros, options);
+        var result = await dialog.Result;
+
+        if (result is null || result.Canceled)
+        {
+            return;
+        }
+
+        if (result.Data is not DialogCadastrarProduto.NovoProdutoDialogResult novoProduto)
+        {
+            return;
+        }
+
+        try
+        {
+            await ProdutoService.CadastrarProdutoAsync(
+                novoProduto.Secao,
+                novoProduto.Nome,
+                novoProduto.Descricao,
+                novoProduto.Valor);
+
+            await CarregarProdutosAsync();
+            Snackbar.Add("Produto cadastrado com sucesso!", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao cadastrar produto: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task AbrirDialogDetalhesProdutoAsync(Produto produto)
+    {
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            BackdropClick = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var parametros = new DialogParameters<DialogDetalhesProduto>
+        {
+            { x => x.Produto, produto }
+        };
+
+        var dialog = await DialogService.ShowAsync<DialogDetalhesProduto>("Produto", parametros, options);
+        var result = await dialog.Result;
+
+        if (result is null || result.Canceled)
+        {
+            return;
+        }
+
+        if (result.Data is not DialogDetalhesProduto.ResultadoDialogoProduto resultado)
+        {
+            return;
+        }
+
+        if (resultado.atualizou)
+        {
+            Snackbar.Add("Produto atualizado com sucesso!", Severity.Success);
+        }
+
+        if (resultado.excluiu)
+        {
+            Snackbar.Add("Produto excluído com sucesso!", Severity.Success);
+        }
+
+        await CarregarProdutosAsync();
+    }
+}

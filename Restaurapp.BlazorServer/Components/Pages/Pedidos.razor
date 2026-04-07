@@ -1,0 +1,849 @@
+@page "/pedidos"
+@implements IAsyncDisposable
+@using System.Globalization
+@using Restaurapp.BlazorServer.Models
+@using Restaurapp.BlazorServer.Services
+
+@inject PedidoService PedidoService
+@inject ServicoWorkflowPedido ServicoWorkflowPedido
+@inject CanalAtualizacaoPedidos CanalAtualizacaoPedidos
+@inject ISnackbar Snackbar
+
+<PageTitle>Pedidos</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">Pedidos</MudText>
+
+        <MudSelect T="OrdenacaoPedidos" Value="ordenacaoSelecionada" ValueChanged="AoMudarOrdenacaoAsync"
+                   Label="Ordenar por" Dense="true" Style="min-width: 240px;">
+            <MudSelectItem Value="@OrdenacaoPedidos.MaisAntigos">Mais antigos</MudSelectItem>
+            <MudSelectItem Value="@OrdenacaoPedidos.AlteradosRecentemente">Alterados recentemente</MudSelectItem>
+        </MudSelect>
+    </MudStack>
+
+    @if (carregando)
+    {
+        <MudProgressCircular Color="Color.Default" Indeterminate="true" />
+    }
+    else
+    {
+        <MudHidden Breakpoint="Breakpoint.SmAndDown">
+            <MudTabs Elevation="0" Rounded="true" @bind-ActivePanelIndex="abaAtiva">
+                <MudTabPanel Text="Fila" Icon="@Icons.Material.Filled.Schedule" />
+                <MudTabPanel Text="Todos os pedidos" Icon="@Icons.Material.Filled.ListAlt" />
+            </MudTabs>
+        </MudHidden>
+
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <MudPaper Elevation="8" Class="pa-0" Style="position:fixed;left:0;right:0;bottom:0;z-index:1200;">
+                <MudTabs Elevation="0" Rounded="false" Position="Position.Bottom" MinimumTabWidth="20px" Centered="true"
+                         @bind-ActivePanelIndex="abaAtiva">
+                    <MudTabPanel Icon="@Icons.Material.Filled.Schedule" />
+                    <MudTabPanel Icon="@Icons.Material.Filled.ListAlt" />
+                    <MudTabPanel Icon="@Icons.Material.Filled.Info" Disabled="@(pedidoSelecionado is null)" />
+                </MudTabs>
+            </MudPaper>
+        </MudHidden>
+
+        @if (abaAtiva == 0)
+        {
+            @if (!pedidosEmAndamento.Any())
+            {
+                <MudText Typo="Typo.body1" Class="mt-3">Nenhum pedido em andamento na fila.</MudText>
+            }
+            else
+            {
+                <MudGrid Class="mt-3 mb-2">
+                    @foreach (var pedidoCard in pedidosEmAndamento)
+                    {
+                        <MudItem xs="12" md="6" lg="4">
+                            <MudCard Elevation="0">
+                                <MudCardContent>
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                                        <MudText Typo="Typo.subtitle1">Pedido #@pedidoCard.Id</MudText>
+                                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">
+                                            @FormatarStatus(pedidoCard.Status)
+                                        </MudChip>
+                                    </MudStack>
+
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-1">
+                                        Cliente: @pedidoCard.NomeClienteSnapshot
+                                    </MudText>
+                                    <MudText Typo="Typo.body2">Tipo: @ObterDescricaoTipoAtendimento(pedidoCard)</MudText>
+                                    <MudText Typo="Typo.body2">Total: @pedidoCard.Total.ToString("C2", culturaPtBr)</MudText>
+
+                                    <MudDivider Class="my-2" />
+                                    <div class="mb-1" style="text-align: center;">
+                                        <MudText Typo="Typo.subtitle2" Class="mb-1">Linha do tempo</MudText>
+                                        @if (EhPedidoComerAqui(pedidoCard))
+                                        {
+                                            @foreach (var etapaMesa in ObterLinhaTempoComerAqui(pedidoCard))
+                                            {
+                                                <MudText Typo="Typo.caption" Color="@(etapaMesa.Concluida ? Color.Success : Color.Default)">
+                                                    • @etapaMesa.Titulo @(etapaMesa.DataUtc.HasValue ? $"às {etapaMesa.DataUtc.Value.ToLocalTime():dd/MM HH:mm}" : "")
+                                                </MudText>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            @foreach (var statusFluxo in fluxoStatus)
+                                            {
+                                                var dataStatus = ObterDataStatus(pedidoCard, statusFluxo);
+                                                <MudText Typo="Typo.caption" Color="@(dataStatus.HasValue ? Color.Success : Color.Default)">
+                                                    • @FormatarStatus(statusFluxo) @(dataStatus.HasValue ? $"às {dataStatus.Value.ToLocalTime():dd/MM HH:mm}" : "")
+                                                </MudText>
+                                            }
+                                        }
+                                    </div>
+
+                                    <MudStack AlignItems="AlignItems.Center" Spacing="1" Class="mt-3">
+                                        <MudStack Row="true" Spacing="1" Justify="Justify.Center">
+                                            @if (pedidoCard.Status == StatusPedido.Criado)
+                                            {
+                                                <MudTooltip Text="Aceitar">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.Check" Color="Color.Success"
+                                                                   OnClick="() => AceitarPedidoAsync(pedidoCard.Id)" />
+                                                </MudTooltip>
+                                                <MudTooltip Text="Recusar">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Error"
+                                                                   OnClick="() => RecusarPedidoAsync(pedidoCard.Id)" />
+                                                </MudTooltip>
+                                            }
+                                            else if (TemProximoStatusEmpresa(pedidoCard))
+                                            {
+                                                <MudTooltip Text="Avançar status">
+                                                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                                               OnClick="() => AvancarStatusPedidoAsync(pedidoCard.Id)">
+                                                        Avançar para @ObterTextoProximoStatus(pedidoCard)
+                                                    </MudButton>
+                                                </MudTooltip>
+                                            }
+                                            else if (pedidoCard.Status == StatusPedido.Enviado && !EhPedidoComerAqui(pedidoCard))
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Warning">Aguardando confirmação do cliente</MudText>
+                                            }
+                                        </MudStack>
+
+                                        <MudButton Variant="Variant.Text" Size="Size.Small"
+                                                   OnClick="() => AbrirDetalheFilaDesktopAsync(pedidoCard.Id)">
+                                            Ver detalhes
+                                        </MudButton>
+                                    </MudStack>
+                                </MudCardContent>
+                            </MudCard>
+                        </MudItem>
+                    }
+                </MudGrid>
+
+                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                    @if (abasDetalhesFilaDesktop.Any())
+                    {
+                        <MudTabs Class="mt-4" Rounded="true" Elevation="0" @bind-ActivePanelIndex="indiceAbaDetalheFilaDesktop">
+                            @foreach (var aba in abasDetalhesFilaDesktop)
+                            {
+                                <MudTabPanel Text="@($"Pedido #{aba.Id}")" Icon="@Icons.Material.Filled.ReceiptLong">
+                                    <MudStack Row="true" Justify="Justify.FlexEnd">
+                                        <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small" OnClick="() => FecharAbaFilaDesktop(aba.Id)">
+                                            Fechar aba
+                                        </MudButton>
+                                    </MudStack>
+                                    @RenderDetalhesPedido(aba)
+                                </MudTabPanel>
+                            }
+                        </MudTabs>
+                    }
+                </MudHidden>
+            }
+        }
+        else if (abaAtiva == 1)
+        {
+            <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-3 mb-2">
+                <MudSelect T="StatusPedido?" Value="statusSelecionado" ValueChanged="AoMudarStatusAsync"
+                           Label="Filtrar por status" Clearable="true" Dense="true" Style="min-width: 260px;">
+                    <MudSelectItem T="StatusPedido?" Value="@(StatusPedido.Criado)">Criado</MudSelectItem>
+                    <MudSelectItem T="StatusPedido?" Value="@(StatusPedido.Confirmado)">Confirmado</MudSelectItem>
+                    <MudSelectItem T="StatusPedido?" Value="@(StatusPedido.EmPreparacao)">Em preparação</MudSelectItem>
+                    <MudSelectItem T="StatusPedido?" Value="@(StatusPedido.Enviado)">Enviado</MudSelectItem>
+                    <MudSelectItem T="StatusPedido?" Value="@(StatusPedido.VendaAvulsa)">Venda avulsa</MudSelectItem>
+                    <MudSelectItem T="StatusPedido?" Value="@(StatusPedido.Concluido)">Concluído</MudSelectItem>
+                    <MudSelectItem T="StatusPedido?" Value="@(StatusPedido.Cancelado)">Cancelado</MudSelectItem>
+                </MudSelect>
+            </MudStack>
+
+            @if (!pedidos.Any())
+            {
+                <MudText Typo="Typo.body1" Class="mt-3">Nenhum pedido encontrado.</MudText>
+            }
+            else
+            {
+                <MudHidden Breakpoint="Breakpoint.SmAndDown">
+                    <MudTable Items="pedidosPaginadosDesktop" Hover="true" Dense="true" Elevation="0" Class="mt-3">
+                        <HeaderContent>
+                            <MudTh>Pedido</MudTh>
+                            <MudTh>Cliente</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh Style="text-align: right">Itens</MudTh>
+                            <MudTh Style="text-align: right">Total</MudTh>
+                            <MudTh Style="text-align: right">Data</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Pedido">#@context.Id</MudTd>
+                            <MudTd DataLabel="Cliente">@context.NomeClienteSnapshot</MudTd>
+                            <MudTd DataLabel="Status">@FormatarStatusParaExibicao(context)</MudTd>
+                            <MudTd DataLabel="Tipo">@ObterDescricaoTipoAtendimento(context)</MudTd>
+                            <MudTd DataLabel="Itens" Style="text-align: right">@context.Itens.Sum(i => i.Quantidade)</MudTd>
+                            <MudTd DataLabel="Total" Style="text-align: right">@context.Total.ToString("C2", culturaPtBr)</MudTd>
+                            <MudTd DataLabel="Data" Style="text-align: right">@context.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudTd>
+                            <MudTd DataLabel="Ações" Style="text-align: right">
+                                <MudButton Variant="Variant.Text" Size="Size.Small"
+                                           OnClick="() => AbrirDetalheTodosPedidosDesktopAsync(context.Id)">
+                                    Ver detalhes
+                                </MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+
+                    @if (totalPedidosDesktop > tamanhoPaginaDesktop)
+                    {
+                        <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2">
+                            <MudPagination Count="@ObterTotalPaginas(totalPedidosDesktop, tamanhoPaginaDesktop)"
+                                           Selected="paginaPedidosDesktop" SelectedChanged="AoMudarPaginaPedidosDesktopAsync" Size="Size.Small"
+                                           Variant="Variant.Outlined" />
+                        </MudStack>
+                    }
+
+                    @if (abasDetalhesTodosDesktop.Any())
+                    {
+                        <MudTabs Class="mt-4" Rounded="true" Elevation="0" @bind-ActivePanelIndex="indiceAbaDetalheTodosDesktop">
+                            @foreach (var aba in abasDetalhesTodosDesktop)
+                            {
+                                <MudTabPanel Text="@($"Pedido #{aba.Id}")" Icon="@Icons.Material.Filled.ReceiptLong">
+                                    <MudStack Row="true" Justify="Justify.FlexEnd">
+                                        <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small" OnClick="() => FecharAbaTodosDesktop(aba.Id)">
+                                            Fechar aba
+                                        </MudButton>
+                                    </MudStack>
+                                    @RenderDetalhesPedido(aba)
+                                </MudTabPanel>
+                            }
+                        </MudTabs>
+                    }
+                </MudHidden>
+
+                <MudHidden Breakpoint="Breakpoint.MdAndUp">
+                    <MudTable Items="pedidos" Hover="true" Dense="true" Elevation="0" Class="mt-3">
+                        <HeaderContent>
+                            <MudTh>Pedido</MudTh>
+                            <MudTh>Cliente</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Tipo</MudTh>
+                            <MudTh Style="text-align: right">Itens</MudTh>
+                            <MudTh Style="text-align: right">Total</MudTh>
+                            <MudTh Style="text-align: right">Data</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Pedido">#@context.Id</MudTd>
+                            <MudTd DataLabel="Cliente">@context.NomeClienteSnapshot</MudTd>
+                            <MudTd DataLabel="Status">@FormatarStatusParaExibicao(context)</MudTd>
+                            <MudTd DataLabel="Tipo">@ObterDescricaoTipoAtendimento(context)</MudTd>
+                            <MudTd DataLabel="Itens" Style="text-align: right">@context.Itens.Sum(i => i.Quantidade)</MudTd>
+                            <MudTd DataLabel="Total" Style="text-align: right">@context.Total.ToString("C2", culturaPtBr)</MudTd>
+                            <MudTd DataLabel="Data" Style="text-align: right">@context.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudTd>
+                            <MudTd DataLabel="Ações" Style="text-align: right">
+                                <MudButton Variant="Variant.Text" Size="Size.Small"
+                                           OnClick="() => SelecionarPedidoAsync(context.Id)">
+                                    Ver detalhes
+                                </MudButton>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudHidden>
+            }
+        }
+        else
+        {
+            @if (pedidoSelecionado is null)
+            {
+                <MudText Typo="Typo.body1" Class="mt-3">Selecione um pedido em "Fila" ou "Todos os pedidos" para ver os detalhes.</MudText>
+            }
+            else
+            {
+                <MudCard Class="mt-3" Elevation="0">
+                    <MudCardContent>
+                        <MudText Typo="Typo.h6">Pedido #@pedidoSelecionado.Id</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @FormatarStatusParaExibicao(pedidoSelecionado) • @ObterDescricaoTipoAtendimento(pedidoSelecionado)
+                        </MudText>
+
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.subtitle2">Cliente</MudText>
+                        <MudText Typo="Typo.body2">@pedidoSelecionado.NomeClienteSnapshot (@pedidoSelecionado.EmailClienteSnapshot)</MudText>
+
+                        @if (!string.IsNullOrWhiteSpace(pedidoSelecionado.EnderecoEntrega))
+                        {
+                            <MudText Typo="Typo.subtitle2" Class="mt-3">Endereço de entrega</MudText>
+                            <MudText Typo="Typo.body2">@pedidoSelecionado.EnderecoEntrega</MudText>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(pedidoSelecionado.Observacoes))
+                        {
+                            <MudText Typo="Typo.subtitle2" Class="mt-3">Observações</MudText>
+                            <MudText Typo="Typo.body2">@pedidoSelecionado.Observacoes</MudText>
+                        }
+
+                        <MudDivider Class="my-3" />
+                        <div class="mb-2" style="text-align: center;">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Linha do tempo</MudText>
+                            @foreach (var itemTimeline in pedidoSelecionado.HistoricoStatus.OrderBy(h => h.DataStatusUtc))
+                            {
+                                <MudText Typo="Typo.body2">• @FormatarStatus(itemTimeline.Status) às @itemTimeline.DataStatusUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm") (@itemTimeline.RegistradoPor)</MudText>
+                            }
+                        </div>
+
+                        <MudDivider Class="my-3" />
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Itens</MudText>
+                        <MudTable Items="pedidoSelecionado.Itens" Dense="true" Hover="true" Elevation="0">
+                            <HeaderContent>
+                                <MudTh>Produto</MudTh>
+                                <MudTh Style="text-align: right">Qtd</MudTh>
+                                <MudTh Style="text-align: right">Unitário</MudTh>
+                                <MudTh Style="text-align: right">Subtotal</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Produto">@context.NomeProdutoSnapshot</MudTd>
+                                <MudTd DataLabel="Qtd" Style="text-align: right">@context.Quantidade</MudTd>
+                                <MudTd DataLabel="Unitário" Style="text-align: right">@context.PrecoUnitarioSnapshot.ToString("C2", culturaPtBr)</MudTd>
+                                <MudTd DataLabel="Subtotal" Style="text-align: right">@context.SubtotalItem.ToString("C2", culturaPtBr)</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+
+                        <MudDivider Class="my-3" />
+                        <MudStack AlignItems="AlignItems.End" Spacing="0">
+                            <MudText Typo="Typo.body2">Subtotal: @pedidoSelecionado.Subtotal.ToString("C2", culturaPtBr)</MudText>
+                            <MudText Typo="Typo.body2">Desconto: @pedidoSelecionado.Desconto.ToString("C2", culturaPtBr)</MudText>
+                            <MudText Typo="Typo.body2">Frete: @pedidoSelecionado.Frete.ToString("C2", culturaPtBr)</MudText>
+                            <MudText Typo="Typo.h6">Total: @pedidoSelecionado.Total.ToString("C2", culturaPtBr)</MudText>
+                        </MudStack>
+                    </MudCardContent>
+                </MudCard>
+            }
+        }
+
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <div style="height:72px;"></div>
+        </MudHidden>
+    }
+</MudContainer>
+
+@code {
+    private static readonly CultureInfo culturaPtBr = CultureInfo.GetCultureInfo("pt-BR");
+
+    private readonly StatusPedido[] fluxoStatus =
+    {
+StatusPedido.Criado,
+StatusPedido.Confirmado,
+StatusPedido.EmPreparacao,
+StatusPedido.Enviado,
+StatusPedido.Concluido
+};
+
+    private bool carregando = true;
+    private int abaAtiva;
+    private StatusPedido? statusSelecionado;
+    private OrdenacaoPedidos ordenacaoSelecionada = OrdenacaoPedidos.MaisAntigos;
+    private const int tamanhoPaginaDesktop = 5;
+    private const int limiteAbasDetalhesDesktop = 5;
+    private int paginaPedidosDesktop = 1;
+    private int totalPedidosDesktop;
+    private int indiceAbaDetalheFilaDesktop;
+    private int indiceAbaDetalheTodosDesktop;
+    private List<Pedido> pedidos = new();
+    private List<Pedido> pedidosPaginadosDesktop = new();
+    private List<Pedido> pedidosEmAndamento = new();
+    private List<Pedido> abasDetalhesFilaDesktop = new();
+    private List<Pedido> abasDetalhesTodosDesktop = new();
+    private Pedido? pedidoSelecionado;
+    private Func<AtualizacaoPedidoNotificacao, Task>? _assinaturaAtualizacao;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _assinaturaAtualizacao = async notificacao =>
+        {
+            await InvokeAsync(async () =>
+    {
+            ExibirToastAtualizacaoPedido(notificacao.PedidoId, notificacao.Status);
+            await CarregarPedidosAsync();
+            StateHasChanged();
+        });
+        };
+
+        CanalAtualizacaoPedidos.PedidoAtualizado += _assinaturaAtualizacao;
+        await CarregarPedidosAsync();
+    }
+
+    private async Task AoMudarStatusAsync(StatusPedido? novoStatus)
+    {
+        statusSelecionado = novoStatus;
+        paginaPedidosDesktop = 1;
+        await CarregarPedidosAsync();
+    }
+
+    private async Task AoMudarOrdenacaoAsync(OrdenacaoPedidos novaOrdenacao)
+    {
+        ordenacaoSelecionada = novaOrdenacao;
+        paginaPedidosDesktop = 1;
+        await CarregarPedidosAsync();
+    }
+
+    private async Task CarregarPedidosAsync()
+    {
+        carregando = true;
+
+        try
+        {
+            pedidos = await PedidoService.ObterPedidosAsync(
+                statusSelecionado,
+                ordenarPorAtualizacao: OrdenarPorAtualizacao);
+
+            pedidosEmAndamento = pedidos
+                .Where(EhVisivelNaFilaServidor)
+                .ToList();
+
+            await CarregarPaginaPedidosDesktopAsync();
+
+            if (pedidoSelecionado is not null)
+            {
+                pedidoSelecionado = await PedidoService.ObterPedidoPorIdAsync(pedidoSelecionado.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao carregar pedidos: {ex.Message}", Severity.Error);
+            pedidos = new List<Pedido>();
+            pedidosEmAndamento = new List<Pedido>();
+            pedidoSelecionado = null;
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    private async Task SelecionarPedidoAsync(int pedidoId)
+    {
+        pedidoSelecionado = await PedidoService.ObterPedidoPorIdAsync(pedidoId);
+    }
+
+    private async Task SelecionarPedidoNaTabelaDesktopAsync(int pedidoId)
+    {
+        pedidoSelecionado = await PedidoService.ObterPedidoPorIdAsync(pedidoId);
+    }
+
+    private async Task AbrirDetalheFilaDesktopAsync(int pedidoId)
+    {
+        var pedido = await PedidoService.ObterPedidoPorIdAsync(pedidoId);
+        if (pedido is null)
+        {
+            return;
+        }
+
+        pedidoSelecionado = pedido;
+        AbrirOuAtivarAbaDetalhe(
+            abasDetalhesFilaDesktop,
+            pedido,
+            ref indiceAbaDetalheFilaDesktop,
+            "Você atingiu o limite de 5 abas de detalhes na fila. Feche uma aba para abrir outra.");
+    }
+
+    private async Task AbrirDetalheTodosPedidosDesktopAsync(int pedidoId)
+    {
+        var pedido = await PedidoService.ObterPedidoPorIdAsync(pedidoId);
+        if (pedido is null)
+        {
+            return;
+        }
+
+        pedidoSelecionado = pedido;
+        AbrirOuAtivarAbaDetalhe(
+            abasDetalhesTodosDesktop,
+            pedido,
+            ref indiceAbaDetalheTodosDesktop,
+            "Você atingiu o limite de 5 abas de detalhes em Todos os pedidos. Feche uma aba para abrir outra.");
+    }
+
+    private void AbrirOuAtivarAbaDetalhe(List<Pedido> abas, Pedido pedido, ref int indiceAtivo, string mensagemLimite)
+    {
+        var indiceExistente = abas.FindIndex(p => p.Id == pedido.Id);
+        if (indiceExistente >= 0)
+        {
+            abas[indiceExistente] = pedido;
+            indiceAtivo = indiceExistente;
+            return;
+        }
+
+        if (abas.Count >= limiteAbasDetalhesDesktop)
+        {
+            Snackbar.Add(mensagemLimite, Severity.Warning);
+            return;
+        }
+
+        abas.Add(pedido);
+        indiceAtivo = abas.Count - 1;
+    }
+
+    private void FecharAbaFilaDesktop(int pedidoId)
+    {
+        FecharAbaDetalhe(abasDetalhesFilaDesktop, pedidoId, ref indiceAbaDetalheFilaDesktop);
+    }
+
+    private void FecharAbaTodosDesktop(int pedidoId)
+    {
+        FecharAbaDetalhe(abasDetalhesTodosDesktop, pedidoId, ref indiceAbaDetalheTodosDesktop);
+    }
+
+    private static void FecharAbaDetalhe(List<Pedido> abas, int pedidoId, ref int indiceAtivo)
+    {
+        var indiceRemovido = abas.FindIndex(p => p.Id == pedidoId);
+        if (indiceRemovido < 0)
+        {
+            return;
+        }
+
+        abas.RemoveAt(indiceRemovido);
+
+        if (!abas.Any())
+        {
+            indiceAtivo = 0;
+            return;
+        }
+
+        if (indiceAtivo > indiceRemovido)
+        {
+            indiceAtivo -= 1;
+            return;
+        }
+
+        if (indiceAtivo >= abas.Count)
+        {
+            indiceAtivo = abas.Count - 1;
+        }
+    }
+
+    private RenderFragment RenderDetalhesPedido(Pedido pedido) => @<MudCard Elevation="0">
+        <MudCardContent>
+            <MudText Typo="Typo.h6">Pedido #@pedido.Id</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                @FormatarStatusParaExibicao(pedido) • @ObterDescricaoTipoAtendimento(pedido)
+            </MudText>
+
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.subtitle2">Cliente</MudText>
+            <MudText Typo="Typo.body2">@pedido.NomeClienteSnapshot (@pedido.EmailClienteSnapshot)</MudText>
+
+            @if (!string.IsNullOrWhiteSpace(pedido.EnderecoEntrega))
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-3">Endereço de entrega</MudText>
+                <MudText Typo="Typo.body2">@pedido.EnderecoEntrega</MudText>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(pedido.Observacoes))
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-3">Observações</MudText>
+                <MudText Typo="Typo.body2">@pedido.Observacoes</MudText>
+            }
+
+            <MudDivider Class="my-3" />
+            <div class="mb-2" style="text-align: center;">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Linha do tempo</MudText>
+                @foreach (var itemTimeline in pedido.HistoricoStatus.OrderBy(h => h.DataStatusUtc))
+                {
+                    <MudText Typo="Typo.body2">• @FormatarStatus(itemTimeline.Status) às @itemTimeline.DataStatusUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm") (@itemTimeline.RegistradoPor)</MudText>
+                }
+            </div>
+
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Itens</MudText>
+            <MudTable Items="pedido.Itens" Dense="true" Hover="true" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Produto</MudTh>
+                    <MudTh Style="text-align: right">Qtd</MudTh>
+                    <MudTh Style="text-align: right">Unitário</MudTh>
+                    <MudTh Style="text-align: right">Subtotal</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Produto">@context.NomeProdutoSnapshot</MudTd>
+                    <MudTd DataLabel="Qtd" Style="text-align: right">@context.Quantidade</MudTd>
+                    <MudTd DataLabel="Unitário" Style="text-align: right">@context.PrecoUnitarioSnapshot.ToString("C2", culturaPtBr)</MudTd>
+                    <MudTd DataLabel="Subtotal" Style="text-align: right">@context.SubtotalItem.ToString("C2", culturaPtBr)</MudTd>
+                </RowTemplate>
+            </MudTable>
+
+            <MudDivider Class="my-3" />
+            <MudStack AlignItems="AlignItems.End" Spacing="0">
+                <MudText Typo="Typo.body2">Subtotal: @pedido.Subtotal.ToString("C2", culturaPtBr)</MudText>
+                <MudText Typo="Typo.body2">Desconto: @pedido.Desconto.ToString("C2", culturaPtBr)</MudText>
+                <MudText Typo="Typo.body2">Frete: @pedido.Frete.ToString("C2", culturaPtBr)</MudText>
+                <MudText Typo="Typo.h6">Total: @pedido.Total.ToString("C2", culturaPtBr)</MudText>
+            </MudStack>
+        </MudCardContent>
+    </MudCard>;
+
+    private async Task AoMudarPaginaPedidosDesktopAsync(int pagina)
+    {
+        paginaPedidosDesktop = pagina;
+        await CarregarPaginaPedidosDesktopAsync();
+    }
+
+    private async Task CarregarPaginaPedidosDesktopAsync()
+    {
+        var resultado = await PedidoService.ObterPedidosPaginadosAsync(
+            paginaPedidosDesktop,
+            tamanhoPaginaDesktop,
+            statusSelecionado,
+            ordenarPorAtualizacao: OrdenarPorAtualizacao);
+
+        totalPedidosDesktop = resultado.TotalRegistros;
+
+        var totalPaginas = ObterTotalPaginas(totalPedidosDesktop, tamanhoPaginaDesktop);
+        if (totalPaginas > 0 && paginaPedidosDesktop > totalPaginas)
+        {
+            paginaPedidosDesktop = totalPaginas;
+            resultado = await PedidoService.ObterPedidosPaginadosAsync(
+                paginaPedidosDesktop,
+                tamanhoPaginaDesktop,
+                statusSelecionado,
+                ordenarPorAtualizacao: OrdenarPorAtualizacao);
+            totalPedidosDesktop = resultado.TotalRegistros;
+        }
+
+        pedidosPaginadosDesktop = resultado.Itens;
+    }
+
+    private bool OrdenarPorAtualizacao => ordenacaoSelecionada == OrdenacaoPedidos.AlteradosRecentemente;
+
+    private static int ObterTotalPaginas(int totalRegistros, int tamanhoPagina)
+    {
+        if (totalRegistros <= 0 || tamanhoPagina <= 0)
+        {
+            return 1;
+        }
+
+        return (int)Math.Ceiling(totalRegistros / (double)tamanhoPagina);
+    }
+
+    private async Task AceitarPedidoAsync(int pedidoId)
+    {
+        var pedidoTracked = await ServicoWorkflowPedido.ObterPedidoComHistoricoAsync(pedidoId);
+        if (pedidoTracked is null)
+        {
+            Snackbar.Add("Pedido nao encontrado.", Severity.Warning);
+            return;
+        }
+
+        var atualizou = await ServicoWorkflowPedido.AtualizarStatusAsync(pedidoTracked, StatusPedido.Confirmado, "Empresa");
+        if (!atualizou)
+        {
+            Snackbar.Add("Nao foi possivel aceitar o pedido no status atual.", Severity.Warning);
+            return;
+        }
+
+        await CarregarPedidosAsync();
+    }
+
+    private async Task RecusarPedidoAsync(int pedidoId)
+    {
+        var pedidoTracked = await ServicoWorkflowPedido.ObterPedidoComHistoricoAsync(pedidoId);
+        if (pedidoTracked is null)
+        {
+            Snackbar.Add("Pedido nao encontrado.", Severity.Warning);
+            return;
+        }
+
+        var atualizou = await ServicoWorkflowPedido.AtualizarStatusAsync(pedidoTracked, StatusPedido.Cancelado, "Empresa");
+        if (!atualizou)
+        {
+            Snackbar.Add("Nao foi possivel recusar o pedido no status atual.", Severity.Warning);
+            return;
+        }
+
+        await CarregarPedidosAsync();
+    }
+
+    private async Task AvancarStatusPedidoAsync(int pedidoId)
+    {
+        var pedidoTracked = await ServicoWorkflowPedido.ObterPedidoComHistoricoAsync(pedidoId);
+        if (pedidoTracked is null)
+        {
+            Snackbar.Add("Pedido nao encontrado.", Severity.Warning);
+            return;
+        }
+
+        var proximoStatus = ServicoWorkflowPedido.ObterProximoStatusEmpresa(pedidoTracked);
+        if (!proximoStatus.HasValue)
+        {
+            Snackbar.Add("Nao ha proximo status disponivel para este pedido.", Severity.Warning);
+            return;
+        }
+
+        var atualizou = await ServicoWorkflowPedido.AtualizarStatusAsync(pedidoTracked, proximoStatus.Value, "Empresa");
+        if (!atualizou)
+        {
+            Snackbar.Add("Nao foi possivel avancar o status do pedido.", Severity.Warning);
+            return;
+        }
+
+        await CarregarPedidosAsync();
+    }
+
+    private DateTime? ObterDataStatus(Pedido pedido, StatusPedido status)
+    {
+        var dataHistorico = pedido.HistoricoStatus
+        .Where(h => h.Status == status)
+        .OrderBy(h => h.DataStatusUtc)
+        .Select(h => (DateTime?)h.DataStatusUtc)
+        .FirstOrDefault();
+
+        if (dataHistorico.HasValue)
+        {
+            return dataHistorico;
+        }
+
+        if (status == StatusPedido.Criado)
+        {
+            return pedido.CreatedAtUtc;
+        }
+
+        return null;
+    }
+
+    private static bool EhVisivelNaFilaServidor(Pedido pedido)
+    {
+        if (EhPedidoComerAqui(pedido))
+        {
+            return pedido.Status is StatusPedido.Criado or StatusPedido.Confirmado;
+        }
+
+        return pedido.Status is StatusPedido.Criado or StatusPedido.Confirmado or StatusPedido.EmPreparacao or
+        StatusPedido.Enviado;
+    }
+
+    private static bool TemProximoStatusEmpresa(Pedido pedido)
+    {
+        return ServicoWorkflowPedido.ObterProximoStatusEmpresa(pedido).HasValue;
+    }
+
+    private static string ObterTextoProximoStatus(Pedido pedido)
+    {
+        return ServicoWorkflowPedido.ObterProximoStatusEmpresa(pedido) switch
+        {
+            StatusPedido.Enviado when EhPedidoComerAqui(pedido) => "Saiu para a mesa",
+            StatusPedido.EmPreparacao => "Em preparação",
+            StatusPedido.Enviado => "Enviado",
+            _ => "proximo status"
+        };
+    }
+
+    private static bool EhPedidoComerAqui(Pedido pedido)
+    {
+        return pedido.TipoAtendimento == TipoAtendimentoPedido.ComerAqui;
+    }
+
+    private static string ObterDescricaoTipoAtendimento(Pedido pedido)
+    {
+        return pedido.TipoAtendimento switch
+        {
+            TipoAtendimentoPedido.ComerAqui => string.IsNullOrWhiteSpace(pedido.NumeroMesa)
+            ? "Para comer aqui"
+                                                    : $"Para comer aqui (Mesa {pedido.NumeroMesa})",
+            TipoAtendimentoPedido.Retirada => "Retirada",
+            _ => "Entrega"
+        };
+    }
+
+    private List<EtapaLinhaTempoMesa> ObterLinhaTempoComerAqui(Pedido pedido)
+    {
+        var dataCriado = ObterDataStatus(pedido, StatusPedido.Criado);
+        var dataConfirmado = ObterDataStatus(pedido, StatusPedido.Confirmado);
+
+        var saiuParaMesa = pedido.Status is StatusPedido.Enviado or StatusPedido.Concluido;
+        var dataSaiuParaMesa = pedido.HistoricoStatus
+        .Where(h => h.Status is StatusPedido.Enviado or StatusPedido.Concluido)
+        .OrderBy(h => h.DataStatusUtc)
+        .Select(h => (DateTime?)h.DataStatusUtc)
+        .FirstOrDefault();
+
+        return new List<EtapaLinhaTempoMesa>
+{
+new("Criado", dataCriado, dataCriado.HasValue),
+new("Confirmado", dataConfirmado, dataConfirmado.HasValue),
+new("Saiu para a mesa", dataSaiuParaMesa, saiuParaMesa)
+};
+    }
+
+    private sealed record EtapaLinhaTempoMesa(string Titulo, DateTime? DataUtc, bool Concluida);
+
+    private enum OrdenacaoPedidos
+    {
+        MaisAntigos,
+        AlteradosRecentemente
+    }
+
+    private static string FormatarStatus(StatusPedido status)
+    {
+        return status switch
+        {
+            StatusPedido.Criado => "Criado",
+            StatusPedido.Confirmado => "Confirmado",
+            StatusPedido.EmPreparacao => "Em preparação",
+            StatusPedido.Enviado => "Enviado",
+            StatusPedido.VendaAvulsa => "Venda avulsa",
+            StatusPedido.Concluido => "Concluído",
+            StatusPedido.Cancelado => "Cancelado",
+            _ => status.ToString()
+        };
+    }
+
+    private static string FormatarStatusParaExibicao(Pedido pedido)
+    {
+        if (EhPedidoComerAqui(pedido) && pedido.Status == StatusPedido.Enviado)
+        {
+            return "Saiu para a mesa";
+        }
+
+        return FormatarStatus(pedido.Status);
+    }
+
+    private void ExibirToastAtualizacaoPedido(int pedidoId, StatusPedido status)
+    {
+        var mensagem = status switch
+        {
+            StatusPedido.Criado => $"Pedido #{pedidoId} criado.",
+            StatusPedido.Confirmado => $"Pedido #{pedidoId} confirmado.",
+            StatusPedido.EmPreparacao => $"Pedido #{pedidoId} em preparo.",
+            StatusPedido.Enviado => $"Pedido #{pedidoId} enviado.",
+            StatusPedido.Concluido => $"Pedido #{pedidoId} concluído.",
+            _ => null
+        };
+
+        if (string.IsNullOrWhiteSpace(mensagem))
+        {
+            return;
+        }
+
+        Snackbar.Add(mensagem, Severity.Info);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        if (_assinaturaAtualizacao is not null)
+        {
+            CanalAtualizacaoPedidos.PedidoAtualizado -= _assinaturaAtualizacao;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+}

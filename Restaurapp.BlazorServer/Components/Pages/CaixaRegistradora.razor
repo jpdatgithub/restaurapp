@@ -1,0 +1,252 @@
+@page "/caixa-registradora"
+@using Restaurapp.BlazorServer.Models
+@using Restaurapp.BlazorServer.Services
+@using MudBlazor
+
+@inject TransacaoService TransacaoService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Caixa Registradora</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" Class="mb-4">Caixa Registradora</MudText>
+
+    <MudHidden Breakpoint="Breakpoint.MdAndUp">
+        <MudText Typo="Typo.subtitle2" Color="Color.Secondary" Class="mb-2">@ObterSubtituloAbaAtual()</MudText>
+    </MudHidden>
+
+    @if (transacoes is null)
+    {
+        <MudProgressCircular Color="Color.Default" Indeterminate="true" />
+    }
+    else
+    {
+        <MudHidden Breakpoint="Breakpoint.SmAndDown">
+            <MudTabs Elevation="0" Rounded="true" @bind-ActivePanelIndex="abaAtiva">
+                <MudTabPanel Text="Todas as transações" Icon="@Icons.Material.Filled.ListAlt" />
+                <MudTabPanel Text="Receitas" Icon="@Icons.Material.Filled.TrendingUp" />
+                <MudTabPanel Text="Despesas" Icon="@Icons.Material.Filled.TrendingDown" />
+            </MudTabs>
+        </MudHidden>
+
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <MudPaper Elevation="8" Class="pa-0" Style="position:fixed;left:0;right:0;bottom:0;z-index:1200;">
+                <MudTabs Elevation="0" Rounded="false" Position="Position.Bottom" MinimumTabWidth="20px" Centered="true"
+                         @bind-ActivePanelIndex="abaAtiva">
+                    <MudTabPanel Icon="@Icons.Material.Filled.ListAlt" />
+                    <MudTabPanel Icon="@Icons.Material.Filled.TrendingUp" />
+                    <MudTabPanel Icon="@Icons.Material.Filled.TrendingDown" />
+                </MudTabs>
+            </MudPaper>
+        </MudHidden>
+
+        @if (abaAtiva == 0)
+        {
+            <MudTable Items="transacoes" Hover="true" Dense="true" Elevation="0" Class="mt-3">
+                <HeaderContent>
+                    <MudTh>Descrição</MudTh>
+                    <MudTh>Categoria</MudTh>
+                    <MudTh Style="text-align: right">Valor</MudTh>
+                    <MudTh Style="text-align: right">Data/Hora</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Descrição">@context.Descricao</MudTd>
+                    <MudTd DataLabel="Categoria">@context.Categoria</MudTd>
+                    <MudTd DataLabel="Valor" Style="text-align: right">
+                        <MudText Color="@ObterCorValor(context.Categoria)">@FormatarValorRegistroGeral(context)
+                        </MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Data/Hora" Style="text-align: right">@context.DataDeCadastro.ToString("dd/MM/yyyy                        HH:mm")
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Typo="Typo.body2" Align="Align.Center" Class="py-4">
+                        Nenhuma transação cadastrada.
+                    </MudText>
+                </NoRecordsContent>
+            </MudTable>
+        }
+        else if (abaAtiva == 1)
+        {
+            <MudStack Row="true" Justify="Justify.FlexEnd" Class="mb-3 mt-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AbrirDialogCadastrarReceita">
+                    Cadastrar receita
+                </MudButton>
+            </MudStack>
+
+            <MudTable Items="receitas" Hover="true" Dense="true" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Descrição</MudTh>
+                    <MudTh Style="text-align: right">Valor</MudTh>
+                    <MudTh Style="text-align: right">Data/Hora</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Descrição">@context.Descricao</MudTd>
+                    <MudTd DataLabel="Valor" Style="text-align: right">
+                        <MudText Color="Color.Success">@context.Valor.ToString("C2")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Data/Hora" Style="text-align: right">@context.DataDeCadastro.ToString("dd/MM/yyyy                        HH:mm")
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Typo="Typo.body2" Align="Align.Center" Class="py-4">
+                        Nenhuma receita cadastrada.
+                    </MudText>
+                </NoRecordsContent>
+            </MudTable>
+        }
+        else if (abaAtiva == 2)
+        {
+            <MudStack Row="true" Justify="Justify.FlexEnd" Class="mb-3 mt-3">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AbrirDialogCadastrarDespesa">
+                    Cadastrar despesa
+                </MudButton>
+            </MudStack>
+
+            <MudTable Items="despesas" Hover="true" Dense="true" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Descrição</MudTh>
+                    <MudTh Style="text-align: right">Valor</MudTh>
+                    <MudTh Style="text-align: right">Data/Hora</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Descrição">@context.Descricao</MudTd>
+                    <MudTd DataLabel="Valor" Style="text-align: right">
+                        <MudText Color="Color.Error">@context.Valor.ToString("C2")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Data/Hora" Style="text-align: right">@context.DataDeCadastro.ToString("dd/MM/yyyy                        HH:mm")
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText Typo="Typo.body2" Align="Align.Center" Class="py-4">
+                        Nenhuma despesa cadastrada.
+                    </MudText>
+                </NoRecordsContent>
+            </MudTable>
+        }
+
+        <MudHidden Breakpoint="Breakpoint.MdAndUp">
+            <div style="height:72px;"></div>
+        </MudHidden>
+    }
+</MudContainer>
+
+@code {
+    private int abaAtiva;
+    private List<Transacao>? transacoes;
+    private List<Transacao> receitas = new();
+    private List<Transacao>? despesas;
+
+    private string ObterSubtituloAbaAtual() => abaAtiva switch
+    {
+        0 => "Todas as transações",
+        1 => "Receitas",
+        2 => "Despesas",
+        _ => "Todas as transações"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarTransacoesAsync();
+    }
+
+    private async Task CarregarTransacoesAsync()
+    {
+        transacoes = await TransacaoService.ObterTransacoesAsync();
+        receitas = transacoes
+            .Where(t => t.Categoria == CategoriaDeTransacao.Receita)
+            .ToList();
+        despesas = transacoes
+            .Where(t => t.Categoria == CategoriaDeTransacao.Despesa)
+            .ToList();
+    }
+
+    private async Task AbrirDialogCadastrarDespesa()
+    {
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            BackdropClick = false
+        };
+
+        var dialog = await DialogService.ShowAsync<DialogCadastrarDespesa>("Cadastrar despesa", options);
+        var result = await dialog.Result;
+
+        if (result is null || result.Canceled)
+        {
+            return;
+        }
+
+        if (result.Data is not DialogCadastrarDespesa.NovaDespesaDialogResult novaDespesa)
+        {
+            return;
+        }
+
+        try
+        {
+            await TransacaoService.CadastrarDespesaAsync(
+                novaDespesa.Descricao,
+                novaDespesa.Valor,
+                novaDespesa.DataRetroativa);
+
+            await CarregarTransacoesAsync();
+            Snackbar.Add("Despesa cadastrada com sucesso!", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao cadastrar despesa: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task AbrirDialogCadastrarReceita()
+    {
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            BackdropClick = false
+        };
+
+        var dialog = await DialogService.ShowAsync<DialogCadastrarReceita>("Cadastrar receita", options);
+        var result = await dialog.Result;
+
+        if (result is null || result.Canceled)
+        {
+            return;
+        }
+
+        if (result.Data is not DialogCadastrarReceita.NovaReceitaDialogResult novaReceita)
+        {
+            return;
+        }
+
+        try
+        {
+            await TransacaoService.CadastrarReceitaAsync(
+                novaReceita.Descricao,
+                novaReceita.Valor,
+                novaReceita.DataRetroativa);
+
+            await CarregarTransacoesAsync();
+            Snackbar.Add("Receita cadastrada com sucesso!", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao cadastrar receita: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static Color ObterCorValor(CategoriaDeTransacao categoria)
+    {
+        return categoria == CategoriaDeTransacao.Receita ? Color.Success : Color.Error;
+    }
+
+    private static string FormatarValorRegistroGeral(Transacao transacao)
+    {
+        var valorExibido = transacao.Categoria == CategoriaDeTransacao.Despesa
+            ? -Math.Abs(transacao.Valor)
+            : transacao.Valor;
+
+        return valorExibido.ToString("C2");
+    }
+}

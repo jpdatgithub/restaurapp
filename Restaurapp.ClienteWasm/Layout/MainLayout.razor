@@ -1,0 +1,104 @@
+﻿@inherits LayoutComponentBase
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+<MudThemeProvider Theme="@_theme" IsDarkMode="_isDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+@if (_isAuthenticated)
+{
+    <MudLayout>
+        <MudAppBar Elevation="1">
+            <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                           OnClick="@((e) => DrawerToggle())" />
+            <MudLink Href="/" Underline="Underline.None" Color="Color.Inherit" Class="ml-3">
+                <MudText Typo="Typo.h6">Mercado de tudo</MudText>
+            </MudLink>
+            <MudSpacer />
+            <MudIconButton Icon="@(DarkLightModeButtonIcon)" Color="Color.Inherit" OnClick="@DarkModeToggle" />
+            <MudTooltip Text="Carrinho">
+                <MudIconButton Icon="@Icons.Material.Filled.ShoppingCart" Color="Color.Inherit" OnClick="GoToCarrinho" />
+            </MudTooltip>
+            <MudTooltip Text="Conta">
+                <MudIconButton Icon="@Icons.Material.Filled.Receipt" Color="Color.Inherit" OnClick="GoToConta" />
+            </MudTooltip>
+            <MudTooltip Text="Perfil">
+                <MudIconButton OnClick="GoToProfile">
+                    <MudAvatar Color="Color.Primary" Size="Size.Medium">@_userInitial</MudAvatar>
+                </MudIconButton>
+            </MudTooltip>
+        </MudAppBar>
+
+        <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="2">
+            <NavMenu />
+        </MudDrawer>
+
+        <MudMainContent Class="pt-16 pa-4">
+            @Body
+        </MudMainContent>
+    </MudLayout>
+}
+else
+{
+    <MudLayout>
+        <MudMainContent Class="pa-4">
+            @Body
+        </MudMainContent>
+    </MudLayout>
+}
+
+@code {
+    private bool _drawerOpen = true;
+    private bool _isDarkMode = true;
+    private bool _isAuthenticated;
+    private string _userInitial = "?";
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            AppbarText = "#424242",
+            AppbarBackground = "rgba(255,255,255,0.8)",
+            DrawerBackground = "#ffffff"
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#7e6fff",
+            Surface = "#1e1e2d",
+            Background = "#1a1a27",
+            DrawerBackground = "#1a1a27",
+            AppbarBackground = "rgba(26,26,39,0.8)"
+        }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        _isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+
+        if (_isAuthenticated)
+        {
+            var name = authState.User.Identity?.Name;
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                _userInitial = name![0].ToString().ToUpperInvariant();
+            }
+        }
+    }
+
+    private void DrawerToggle() => _drawerOpen = !_drawerOpen;
+
+    private void DarkModeToggle() => _isDarkMode = !_isDarkMode;
+
+    private void GoToCarrinho() => Navigation.NavigateTo("/carrinho");
+
+    private void GoToConta() => Navigation.NavigateTo("/conta");
+
+    private void GoToProfile() => Navigation.NavigateTo("/profile");
+
+    public string DarkLightModeButtonIcon => _isDarkMode
+        ? Icons.Material.Rounded.AutoMode
+        : Icons.Material.Outlined.DarkMode;
+}

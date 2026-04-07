@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: restaurapp-postgres-prod
+    restart: unless-stopped
+    env_file:
+      - ../.env.production
+    ports:
+      - "5432:5432"
+    volumes:
+      - restaurapp-pgdata-prod:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+    migration:
+      image: restaurapp/blazorserver:prod-latest
+      container_name: restaurapp-migration-prod
+      env_file:
+        - ../.env.production
+      depends_on:
+        postgres:
+          condition: service_healthy
+      command: [ "dotnet", "Restaurapp.BlazorServer.dll", "migrate" ]
+
+  restaurapp-server:
+    build:
+      context: ../../../../
+      dockerfile: Restaurapp.BlazorServer/Dockerfile
+    image: restaurapp/blazorserver:prod-latest
+    container_name: restaurapp-server-prod
+    restart: unless-stopped
+    env_file:
+      - ../.env.production
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      Uploads__RootPath: /data/uploads
+      ForwardedHeaders__TrustAll: "true"
+    ports:
+      - "127.0.0.1:5001:8080"
+    volumes:
+      - /var/www/restaurapp/uploads:/data/uploads
+      - /var/log/restaurapp/production:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  restaurapp-pgdata-prod:
