@@ -4,6 +4,7 @@
 @inject CarrinhoService CarrinhoService
 @inject PedidosService PedidosService
 @inject NavigationManager Navigation
+@inject IDialogService DialogService
 
 <PageTitle>Carrinho</PageTitle>
 
@@ -152,6 +153,32 @@ else
         {
             mensagemSeverity = Severity.Warning;
             mensagem = "Informe o endereço de entrega.";
+            return;
+        }
+
+        var dialogParameters = new DialogParameters
+        {
+            [nameof(DialogPagamentoCheckoutGooglePay.EmpresaId)] = snapshot.EmpresaId,
+            [nameof(DialogPagamentoCheckoutGooglePay.Total)] = snapshot.Subtotal
+        };
+
+        var dialogOptions = new DialogOptions
+        {
+            CloseButton = true,
+            FullWidth = true,
+            MaxWidth = MaxWidth.Small
+        };
+
+        var dialog = await DialogService.ShowAsync<DialogPagamentoCheckoutGooglePay>(
+            "Formas de pagamento",
+            dialogParameters,
+            dialogOptions);
+
+        var pagamento = await dialog.Result;
+        if (pagamento is null || pagamento.Canceled)
+        {
+            mensagemSeverity = Severity.Info;
+            mensagem = "Pagamento cancelado. O pedido não foi finalizado.";
             return;
         }
 

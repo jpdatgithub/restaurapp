@@ -1,0 +1,162 @@
+@implements IAsyncDisposable
+@using System.Globalization
+@inject IJSRuntime JSRuntime
+@inject PedidosService PedidosService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Formas de pagamento</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.body1">
+                Selecione uma forma de pagamento para concluir o pedido.
+            </MudText>
+
+            <MudPaper Class="pa-3" Outlined="true">
+                <MudText Typo="Typo.subtitle2">Empresa #@EmpresaId</MudText>
+                <MudText Typo="Typo.h6">Total: @Total.ToString("C2", culturaPtBr)</MudText>
+            </MudPaper>
+
+            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+                Ambiente de teste habilitado. No momento, a única opção disponível é o Google Pay.
+            </MudAlert>
+
+            @if (!string.IsNullOrWhiteSpace(_mensagemStatus))
+            {
+                <MudAlert Severity="@(_processando? Severity.Info: Severity.Warning)" Dense="true"
+                          Variant="Variant.Outlined">
+                    @_mensagemStatus
+                </MudAlert>
+            }
+
+            <div id="@_googlePayContainerId" style="min-height: 48px; display: flex; justify-content: center;"></div>
+
+            @if (_processando)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    <MudText Typo="Typo.body2">Processando pagamento...</MudText>
+                </MudStack>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Disabled="@_processando">Cancelar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter]
+    public int EmpresaId { get; set; }
+
+    [Parameter]
+    public decimal Total { get; set; }
+
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private readonly CultureInfo culturaPtBr = new("pt-BR");
+    private readonly string _googlePayContainerId = $"google-pay-checkout-button-{Guid.NewGuid():N}";
+    private DotNetObjectReference<DialogPagamentoCheckoutGooglePay>? _dotNetRef;
+    private bool _processando;
+    private string? _mensagemStatus;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            var configResultado = await PedidosService.GetGooglePayConfigCheckoutAsync(EmpresaId, Total);
+
+            if (!configResultado.Success || configResultado.Config is null)
+            {
+                _mensagemStatus = configResultado.ErrorMessage ?? "Não foi possível carregar o Google Pay.";
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            await JSRuntime.InvokeVoidAsync("googlePayInterop.renderButton", _googlePayContainerId, configResultado.Config,
+_dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            _mensagemStatus = $"Não foi possível carregar o Google Pay: {ex.Message}";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    [JSInvokable]
+    public Task OnGooglePayStatusChanged(string message)
+    {
+        _mensagemStatus = message;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnGooglePayAuthorized(string token)
+    {
+        if (_processando)
+        {
+            return;
+        }
+
+        _processando = true;
+        _mensagemStatus = null;
+        await InvokeAsync(StateHasChanged);
+
+        var resultado = await PedidosService.ProcessarPagamentoGooglePayCheckoutAsync(EmpresaId, Total, token);
+        if (!resultado.Success || resultado.Response is null)
+        {
+            _processando = false;
+            _mensagemStatus = resultado.ErrorMessage ?? "Não foi possível processar o pagamento.";
+            Snackbar.Add(_mensagemStatus, Severity.Error);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        var mensagem = string.IsNullOrWhiteSpace(resultado.Response.Referencia)
+            ? resultado.Response.Mensagem
+            : $"{resultado.Response.Mensagem} Referência: {resultado.Response.Referencia}";
+
+        Snackbar.Add(mensagem, Severity.Success);
+        MudDialog.Close(DialogResult.Ok(resultado.Response));
+    }
+
+    [JSInvokable]
+    public Task OnGooglePayError(string message)
+    {
+        _processando = false;
+
+        if (!string.IsNullOrWhiteSpace(message)
+            && !message.Contains("cancel", StringComparison.OrdinalIgnoreCase)
+            && !message.Contains("cancelado", StringComparison.OrdinalIgnoreCase))
+        {
+            _mensagemStatus = message;
+        }
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("googlePayInterop.clear", _googlePayContainerId);
+        }
+        catch
+        {
+            // Ignora falhas de limpeza do JS quando o diálogo é fechado rapidamente.
+        }
+
+        _dotNetRef?.Dispose();
+    }
+}

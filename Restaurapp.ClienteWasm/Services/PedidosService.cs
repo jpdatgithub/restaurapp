@@ -1,6 +1,8 @@
 using Restaurapp.ClienteWasm.Models;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace Restaurapp.ClienteWasm.Services
 {
@@ -45,6 +47,63 @@ namespace Restaurapp.ClienteWasm.Services
             return (true, pedido, null);
         }
 
+
+        public async Task<(bool Success, GooglePayConfigResponse? Config, string? ErrorMessage)> GetGooglePayConfigCheckoutAsync(int empresaId, decimal total)
+        {
+            var token = await _authService.EnsureSessionAsync();
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return (false, null, "Não foi possível iniciar a sessão do cliente.");
+            }
+
+            var totalParam = Uri.EscapeDataString(total.ToString(CultureInfo.InvariantCulture));
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"api/pedidos/checkout/googlepay/config?empresaId={empresaId}&total={totalParam}");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            using var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                return (false, null, ExtrairMensagemErro(error, "Não foi possível carregar o Google Pay."));
+            }
+
+            var config = await response.Content.ReadFromJsonAsync<GooglePayConfigResponse>();
+            return config is null
+                ? (false, null, "Resposta inválida ao carregar o Google Pay.")
+                : (true, config, null);
+        }
+
+        public async Task<(bool Success, GooglePayProcessResponse? Response, string? ErrorMessage)> ProcessarPagamentoGooglePayCheckoutAsync(int empresaId, decimal total, string tokenPagamento)
+        {
+            var token = await _authService.EnsureSessionAsync();
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return (false, null, "Não foi possível iniciar a sessão do cliente.");
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, "api/pedidos/checkout/googlepay/processar")
+            {
+                Content = JsonContent.Create(new ProcessarPagamentoGooglePayRequest
+                {
+                    EmpresaId = empresaId,
+                    Total = total,
+                    Token = tokenPagamento
+                })
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+            using var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync();
+                return (false, null, ExtrairMensagemErro(error, "Não foi possível processar o pagamento com Google Pay."));
+            }
+
+            var resultado = await response.Content.ReadFromJsonAsync<GooglePayProcessResponse>();
+            return resultado is null
+                ? (false, null, "Resposta inválida ao processar o pagamento.")
+                : (true, resultado, null);
+        }
 
         public async Task<List<PedidoResumoDto>> GetMeusPedidosAsync()
         {
@@ -112,6 +171,43 @@ namespace Restaurapp.ClienteWasm.Services
             return pedido is null
                 ? (false, null, "Resposta inválida ao confirmar entrega.")
                 : (true, pedido, null);
+        }
+
+        private static string ExtrairMensagemErro(string? error, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(error))
+            {
+                return fallback;
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(error);
+                var root = document.RootElement;
+
+                if (root.ValueKind == JsonValueKind.Object)
+                {
+                    if (root.TryGetProperty("message", out var messageProperty) && messageProperty.ValueKind == JsonValueKind.String)
+                    {
+                        return messageProperty.GetString() ?? fallback;
+                    }
+
+                    if (root.TryGetProperty("mensagem", out var mensagemProperty) && mensagemProperty.ValueKind == JsonValueKind.String)
+                    {
+                        return mensagemProperty.GetString() ?? fallback;
+                    }
+                }
+                else if (root.ValueKind == JsonValueKind.String)
+                {
+                    return root.GetString() ?? fallback;
+                }
+            }
+            catch
+            {
+                // Mantém o fallback para respostas que não estão em JSON válido.
+            }
+
+            return error;
         }
     }
 }
