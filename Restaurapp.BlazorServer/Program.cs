@@ -178,26 +178,6 @@ try
         return;
     }
 
-    if (args.Contains("reset-data", StringComparer.OrdinalIgnoreCase))
-    {
-        try
-        {
-            using var scope = app.Services.CreateScope();
-            var resetService = scope.ServiceProvider.GetRequiredService<ServicoResetBancoDados>();
-
-            await resetService.ResetAsync(
-                confirm: args.Contains("--confirm", StringComparer.OrdinalIgnoreCase),
-                allowProduction: args.Contains("--allow-production", StringComparer.OrdinalIgnoreCase));
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Falha ao executar reset-data: {ex.Message}");
-            Environment.ExitCode = 1;
-        }
-
-        return;
-    }
-
     // --- Restante do Pipeline HTTP ---
     var uploadsOptions = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<UploadsOptions>>().Value;
     var uploadsRootPath = Path.IsPathRooted(uploadsOptions.RootPath)

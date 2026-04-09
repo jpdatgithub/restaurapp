@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
@@ -7,6 +8,12 @@ using Restaurapp.BlazorServer.Models;
 
 namespace Restaurapp.BlazorServer.Services
 {
+    public sealed record ResultadoResetBancoDados(
+        string EmpresaNome,
+        string AdminEmail,
+        string ClienteEmail,
+        string ProdutoNome);
+
     public class ServicoResetBancoDados
     {
         private static readonly string[] TabelasPreservadas =
@@ -39,24 +46,31 @@ namespace Restaurapp.BlazorServer.Services
             _logger = logger;
         }
 
-        public async Task ResetAsync(bool confirm, bool allowProduction = false)
+        public async Task<ResultadoResetBancoDados> ResetAsync(bool confirm)
         {
             if (!confirm)
             {
                 throw new InvalidOperationException(
-                    "Operação cancelada. Use o argumento --confirm para limpar os dados da base.");
+                    "Operação cancelada. Envie confirm=true para limpar os dados da base.");
             }
 
-            if (_environment.IsProduction() && !allowProduction)
+            if (_environment.IsProduction())
             {
                 throw new InvalidOperationException(
-                    "Ambiente de produção detectado. Use também --allow-production se quiser continuar conscientemente.");
+                    "Ambiente de produção detectado. O reset remoto está bloqueado por segurança.");
             }
 
-            var empresaNome = ObterConfiguracao("ResetSeed:EmpresaNome", "Empresa Teste");
-            var adminNome = ObterConfiguracao("ResetSeed:AdminNome", "Usuário de Teste");
-            var adminEmail = ObterConfiguracao("ResetSeed:AdminEmail", "teste@restaurapp.local");
-            var adminPassword = ObterConfiguracao("ResetSeed:AdminPassword", "Restaurapp@Teste123!");
+            var empresaNome = ObterConfiguracao("ResetSeed:EmpresaNome", "Empresa Seed");
+            var adminNome = ObterConfiguracao("ResetSeed:AdminNome", "teste");
+            var adminEmail = ObterConfiguracao("ResetSeed:AdminEmail", "teste@gmail.com");
+            var adminPassword = ObterConfiguracao("ResetSeed:AdminPassword", "Teste123@");
+            var clienteNome = ObterConfiguracao("ResetSeed:ClienteNome", "uteste");
+            var clienteEmail = ObterConfiguracao("ResetSeed:ClienteEmail", "uteste@gmail.com");
+            var clientePassword = ObterConfiguracao("ResetSeed:ClientePassword", "Teste123@");
+            var produtoSecao = ObterConfiguracao("ResetSeed:ProdutoSecao", "Testes");
+            var produtoNome = ObterConfiguracao("ResetSeed:ProdutoNome", "Produto Teste");
+            var produtoDescricao = ObterConfiguracao("ResetSeed:ProdutoDescricao", "Criado automaticamente pelo reset para facilitar os testes.");
+            var produtoPreco = ObterConfiguracaoDecimal("ResetSeed:ProdutoPreco", 19.90m);
 
             await using var transaction = await _dbContext.Database.BeginTransactionAsync();
 
@@ -67,12 +81,37 @@ namespace Restaurapp.BlazorServer.Services
 
             var empresa = new Empresa
             {
-                Nome = empresaNome
+                Nome = empresaNome,
+                HabilitarContasPosPagas = true
             };
 
             _dbContext.Empresas.Add(empresa);
             await _dbContext.SaveChangesAsync();
 
+            await CriarAdministradorAsync(empresa, adminNome, adminEmail, adminPassword);
+            await CriarClientePadraoAsync(clienteNome, clienteEmail, clientePassword);
+            await CriarProdutoPadraoAsync(empresa, produtoSecao, produtoNome, produtoDescricao, produtoPreco);
+
+            await transaction.CommitAsync();
+
+            _logger.LogInformation(
+                "Reset concluído com sucesso. Empresa: {EmpresaNome}. Admin: {AdminEmail}. Cliente: {ClienteEmail}. Produto: {ProdutoNome}",
+                empresaNome,
+                adminEmail,
+                clienteEmail,
+                produtoNome);
+
+            Console.WriteLine("Reset concluído com sucesso.");
+            Console.WriteLine($"Empresa seed: {empresaNome}");
+            Console.WriteLine($"Admin seed: {adminEmail}");
+            Console.WriteLine($"Cliente seed: {clienteEmail}");
+            Console.WriteLine($"Produto seed: {produtoNome}");
+
+            return new ResultadoResetBancoDados(empresaNome, adminEmail, clienteEmail, produtoNome);
+        }
+
+        private async Task CriarAdministradorAsync(Empresa empresa, string adminNome, string adminEmail, string adminPassword)
+        {
             var usuario = new ApplicationUser
             {
                 Nome = adminNome,
@@ -86,7 +125,7 @@ namespace Restaurapp.BlazorServer.Services
             if (!createResult.Succeeded)
             {
                 throw new InvalidOperationException(
-                    $"Falha ao criar usuário padrão: {string.Join(", ", createResult.Errors.Select(e => e.Description))}");
+                    $"Falha ao criar usuário admin padrão: {string.Join(", ", createResult.Errors.Select(e => e.Description))}");
             }
 
             var roleResult = await _userManager.AddToRoleAsync(usuario, "Admin");
@@ -102,17 +141,43 @@ namespace Restaurapp.BlazorServer.Services
                 throw new InvalidOperationException(
                     $"Falha ao adicionar claim EmpresaId: {string.Join(", ", claimResult.Errors.Select(e => e.Description))}");
             }
+        }
 
-            await transaction.CommitAsync();
+        private async Task CriarClientePadraoAsync(string clienteNome, string clienteEmail, string clientePassword)
+        {
+            var cliente = new ClienteUsuario
+            {
+                Nome = clienteNome,
+                Email = clienteEmail,
+                DataCriacaoUtc = DateTime.UtcNow
+            };
 
-            _logger.LogInformation(
-                "Reset concluído com sucesso. Empresa seed: {EmpresaNome}. Usuário seed: {AdminEmail}",
-                empresaNome,
-                adminEmail);
+            var passwordHasher = new PasswordHasher<ClienteUsuario>();
+            cliente.SenhaHash = passwordHasher.HashPassword(cliente, clientePassword);
 
-            Console.WriteLine("Reset concluído com sucesso.");
-            Console.WriteLine($"Empresa seed: {empresaNome}");
-            Console.WriteLine($"Usuário seed: {adminEmail}");
+            _dbContext.ClientesUsuarios.Add(cliente);
+            await _dbContext.SaveChangesAsync();
+        }
+
+        private async Task CriarProdutoPadraoAsync(
+            Empresa empresa,
+            string secao,
+            string nome,
+            string descricao,
+            decimal preco)
+        {
+            var produto = new Produto
+            {
+                EmpresaId = empresa.Id,
+                Secao = secao,
+                Nome = nome,
+                Descricao = string.IsNullOrWhiteSpace(descricao) ? null : descricao.Trim(),
+                Ativo = true,
+                Preco = preco
+            };
+
+            _dbContext.Produtos.Add(produto);
+            await _dbContext.SaveChangesAsync();
         }
 
         private async Task LimparDadosAsync()
@@ -165,6 +230,23 @@ END $$;";
         {
             var valor = _configuration[chave];
             return string.IsNullOrWhiteSpace(valor) ? valorPadrao : valor.Trim();
+        }
+
+        private decimal ObterConfiguracaoDecimal(string chave, decimal valorPadrao)
+        {
+            var valor = _configuration[chave];
+            if (string.IsNullOrWhiteSpace(valor))
+            {
+                return valorPadrao;
+            }
+
+            if (decimal.TryParse(valor, NumberStyles.Number, CultureInfo.InvariantCulture, out var valorConvertido)
+                || decimal.TryParse(valor, NumberStyles.Number, new CultureInfo("pt-BR"), out valorConvertido))
+            {
+                return valorConvertido;
+            }
+
+            return valorPadrao;
         }
     }
 }
