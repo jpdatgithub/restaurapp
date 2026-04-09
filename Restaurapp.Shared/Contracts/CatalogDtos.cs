@@ -15,6 +15,7 @@ public class ProdutoOpcaoCatalogoDto
     public decimal PrecoDelta { get; set; }
     public int QuantidadeMin { get; set; }
     public int QuantidadeMax { get; set; }
+    public int? Inclusos { get; set; }
 }
 
 public class ProdutoOpcaoSecaoCatalogoDto

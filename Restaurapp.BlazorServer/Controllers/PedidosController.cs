@@ -372,7 +372,9 @@ namespace Restaurapp.BlazorServer.Controllers
             foreach (var opcaoSelecionada in opcoesNormalizadas)
             {
                 var referencia = opcoesDisponiveis[opcaoSelecionada.ProdutoOpcaoId];
-                var subtotalDelta = referencia.Opcao.PrecoDelta * opcaoSelecionada.Quantidade * quantidade;
+                var quantidadeInclusa = Math.Min(opcaoSelecionada.Quantidade, Math.Max(0, referencia.Opcao.Inclusos ?? 0));
+                var quantidadeCobradaExtra = Math.Max(0, opcaoSelecionada.Quantidade - quantidadeInclusa);
+                var subtotalDelta = referencia.Opcao.PrecoDelta * quantidadeCobradaExtra * quantidade;
                 subtotalOpcoes += subtotalDelta;
 
                 snapshots.Add(new ItemDePedidoOpcaoSnapshot
@@ -381,6 +383,8 @@ namespace Restaurapp.BlazorServer.Controllers
                     NomeSecaoSnapshot = referencia.Secao.Nome,
                     NomeOpcaoSnapshot = referencia.Opcao.Nome,
                     Quantidade = opcaoSelecionada.Quantidade,
+                    QuantidadeInclusa = quantidadeInclusa,
+                    QuantidadeCobradaExtra = quantidadeCobradaExtra,
                     PrecoUnitarioDeltaSnapshot = referencia.Opcao.PrecoDelta,
                     SubtotalDeltaSnapshot = subtotalDelta
                 });
@@ -562,6 +566,8 @@ namespace Restaurapp.BlazorServer.Controllers
                                 NomeSecao = o.NomeSecaoSnapshot,
                                 NomeOpcao = o.NomeOpcaoSnapshot,
                                 Quantidade = o.Quantidade,
+                                QuantidadeInclusa = o.QuantidadeInclusa,
+                                QuantidadeCobradaExtra = o.QuantidadeCobradaExtra,
                                 PrecoUnitarioDelta = o.PrecoUnitarioDeltaSnapshot,
                                 SubtotalDelta = o.SubtotalDeltaSnapshot
                             }).ToList()
@@ -1131,6 +1137,8 @@ namespace Restaurapp.BlazorServer.Controllers
                             NomeSecao = o.NomeSecaoSnapshot,
                             NomeOpcao = o.NomeOpcaoSnapshot,
                             Quantidade = o.Quantidade,
+                            QuantidadeInclusa = o.QuantidadeInclusa,
+                            QuantidadeCobradaExtra = o.QuantidadeCobradaExtra,
                             PrecoUnitarioDelta = o.PrecoUnitarioDeltaSnapshot,
                             SubtotalDelta = o.SubtotalDeltaSnapshot
                         }).ToList()

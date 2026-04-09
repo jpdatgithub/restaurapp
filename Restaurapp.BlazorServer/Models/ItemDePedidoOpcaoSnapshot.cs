@@ -8,6 +8,8 @@ namespace Restaurapp.BlazorServer.Models
         public string NomeSecaoSnapshot { get; set; } = string.Empty;
         public string NomeOpcaoSnapshot { get; set; } = string.Empty;
         public int Quantidade { get; set; }
+        public int QuantidadeInclusa { get; set; }
+        public int QuantidadeCobradaExtra { get; set; }
         public decimal PrecoUnitarioDeltaSnapshot { get; set; }
         public decimal SubtotalDeltaSnapshot { get; set; }
         public ItemDePedido? ItemDePedido { get; set; }

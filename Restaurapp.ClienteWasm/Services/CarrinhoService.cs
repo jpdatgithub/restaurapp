@@ -80,7 +80,7 @@ namespace Restaurapp.ClienteWasm.Services
                 .ToList();
 
             var itemKey = ConstruirItemKey(produtoId, opcoesNormalizadas);
-            var precoUnitarioFinal = precoBaseProduto + opcoesNormalizadas.Sum(o => o.PrecoDeltaUnitario * o.Quantidade);
+            var precoUnitarioFinal = CalcularPrecoUnitarioFinal(precoBaseProduto, opcoesNormalizadas);
 
             var itemExistente = _state.Itens.FirstOrDefault(i => i.ItemKey == itemKey);
             if (itemExistente is null)
@@ -217,6 +217,8 @@ namespace Restaurapp.ClienteWasm.Services
                 {
                     item.ItemKey = ConstruirItemKey(item.ProdutoId, item.OpcoesSelecionadas);
                 }
+
+                item.PrecoUnitario = CalcularPrecoUnitarioFinal(item.PrecoBaseProduto, item.OpcoesSelecionadas);
             }
         }
 
@@ -232,8 +234,18 @@ namespace Restaurapp.ClienteWasm.Services
             NomeSecao = opcao.NomeSecao,
             NomeOpcao = opcao.NomeOpcao,
             Quantidade = opcao.Quantidade,
+            QuantidadeInclusa = opcao.QuantidadeInclusa,
             PrecoDeltaUnitario = opcao.PrecoDeltaUnitario
         };
+
+        private static decimal CalcularPrecoUnitarioFinal(decimal precoBaseProduto, IEnumerable<CarrinhoItemOpcaoState>? opcoesSelecionadas)
+        {
+            var totalOpcoes = opcoesSelecionadas?
+                .Where(o => o.ProdutoOpcaoId > 0 && o.Quantidade > 0)
+                .Sum(o => o.PrecoDeltaUnitario * Math.Max(0, o.Quantidade - Math.Max(0, o.QuantidadeInclusa))) ?? 0m;
+
+            return precoBaseProduto + totalOpcoes;
+        }
 
         private static string ConstruirItemKey(int produtoId, IEnumerable<CarrinhoItemOpcaoState>? opcoesSelecionadas)
         {

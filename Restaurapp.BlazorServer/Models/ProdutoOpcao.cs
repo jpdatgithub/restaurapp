@@ -9,6 +9,7 @@ namespace Restaurapp.BlazorServer.Models
         public decimal PrecoDelta { get; set; }
         public int QuantidadeMin { get; set; }
         public int QuantidadeMax { get; set; } = 1;
+        public int? Inclusos { get; set; }
         public bool Ativa { get; set; } = true;
         public int Ordem { get; set; }
         public ProdutoOpcaoSecao? Secao { get; set; }

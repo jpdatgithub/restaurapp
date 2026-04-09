@@ -2,7 +2,8 @@
 
 <MudStack Spacing="2">
     <MudText Typo="Typo.body2" Color="Color.Secondary">
-        Cadastre seções e opções para personalizar o produto. Use quantidade mínima/máxima para representar escolhas obrigatórias, adicionais ou limites.
+        Cadastre seções e opções para personalizar o produto. Use quantidade mínima/máxima e `Inclusos` para representar
+        o que já vem no preço base e o que será cobrado como adicional.
     </MudText>
     <MudText Typo="Typo.caption" Color="Color.Secondary">
         Dica: em uma seção, <strong>máximo = 0</strong> significa sem limite de opções selecionadas.
@@ -33,7 +34,8 @@
                     <MudText Typo="Typo.subtitle1">Seção @(i + 1)</MudText>
                     @if (!Disabled)
                     {
-                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="() => RemoverSecao(indiceSecao)" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                       OnClick="() => RemoverSecao(indiceSecao)" />
                     }
                 </MudStack>
 
@@ -42,13 +44,16 @@
                         <MudTextField T="string" Label="Nome da seção" @bind-Value="secao.Nome" Disabled="@Disabled" />
                     </MudItem>
                     <MudItem xs="6" md="3">
-                        <MudNumericField T="int" Label="Mín. seleções" Min="0" @bind-Value="secao.MinSelecoes" Disabled="@Disabled" />
+                        <MudNumericField T="int" Label="Mín. seleções" Min="0" @bind-Value="secao.MinSelecoes"
+                                         Disabled="@Disabled" />
                     </MudItem>
                     <MudItem xs="6" md="3">
-                        <MudNumericField T="int" Label="Máx. seleções" Min="0" @bind-Value="secao.MaxSelecoes" Disabled="@Disabled" />
+                        <MudNumericField T="int" Label="Máx. seleções" Min="0" @bind-Value="secao.MaxSelecoes"
+                                         Disabled="@Disabled" />
                     </MudItem>
                     <MudItem xs="12" md="6">
-                        <MudCheckBox T="bool" Label="Permitir quantidade nas opções" @bind-Value="secao.PermitirQuantidade" Disabled="@Disabled" />
+                        <MudCheckBox T="bool" Label="Permitir quantidade nas opções" @bind-Value="secao.PermitirQuantidade"
+                                     Disabled="@Disabled" />
                     </MudItem>
                     <MudItem xs="12" md="6">
                         <MudCheckBox T="bool" Label="Seção ativa" @bind-Value="secao.Ativa" Disabled="@Disabled" />
@@ -61,7 +66,8 @@
                     <MudText Typo="Typo.subtitle2">Opções</MudText>
                     @if (!Disabled)
                     {
-                        <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Add" OnClick="() => AdicionarOpcao(secao)">
+                        <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Add"
+                                   OnClick="() => AdicionarOpcao(secao)">
                             Adicionar opção
                         </MudButton>
                     }
@@ -82,7 +88,17 @@
 
                         <MudPaper Elevation="0" Class="pa-2 mt-2" Style="border:1px dashed rgba(0,0,0,0.18);">
                             <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
-                                <MudText Typo="Typo.body2">Opção @(j + 1)</MudText>
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    <div
+                                        style="width:24px;height:24px;border-radius:6px;border:1px dashed rgba(0,0,0,0.25);background:rgba(0,0,0,0.03);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                        <MudIcon Icon="@Icons.Material.Filled.Image" Size="Size.Small" Color="Color.Secondary" />
+                                    </div>
+                                    <div>
+                                        <MudText Typo="Typo.body2">Opção @(j + 1)</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Placeholder de preview do ingrediente
+                                        </MudText>
+                                    </div>
+                                </MudStack>
                                 @if (!Disabled)
                                 {
                                     <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Color="Color.Error" Size="Size.Small"
@@ -91,21 +107,28 @@
                             </MudStack>
 
                             <MudGrid>
-                                <MudItem xs="12" md="5">
+                                <MudItem xs="12" md="4">
                                     <MudTextField T="string" Label="Nome da opção" @bind-Value="opcao.Nome" Disabled="@Disabled" />
                                 </MudItem>
-                                <MudItem xs="12" md="3">
+                                <MudItem xs="6" md="2">
                                     <MudNumericField T="decimal" Label="Δ preço" @bind-Value="opcao.PrecoDelta"
                                                      Adornment="Adornment.Start" AdornmentText="R$" Disabled="@Disabled" />
                                 </MudItem>
                                 <MudItem xs="6" md="2">
-                                    <MudNumericField T="int" Label="Qtd mín." Min="0" @bind-Value="opcao.QuantidadeMin" Disabled="@Disabled" />
+                                    <MudNumericField T="int?" Label="Inclusos" Min="0" @bind-Value="opcao.Inclusos"
+                                                     Disabled="@Disabled" />
                                 </MudItem>
                                 <MudItem xs="6" md="2">
-                                    <MudNumericField T="int" Label="Qtd máx." Min="1" @bind-Value="opcao.QuantidadeMax" Disabled="@Disabled" />
+                                    <MudNumericField T="int" Label="Qtd mín." Min="0" @bind-Value="opcao.QuantidadeMin"
+                                                     Disabled="@Disabled" />
+                                </MudItem>
+                                <MudItem xs="6" md="2">
+                                    <MudNumericField T="int" Label="Qtd máx." Min="1" @bind-Value="opcao.QuantidadeMax"
+                                                     Disabled="@Disabled" />
                                 </MudItem>
                                 <MudItem xs="12">
-                                    <MudTextField T="string" Label="Descrição (opcional)" @bind-Value="opcao.Descricao" Disabled="@Disabled" />
+                                    <MudTextField T="string" Label="Descrição (opcional)" @bind-Value="opcao.Descricao"
+                                                  Disabled="@Disabled" />
                                 </MudItem>
                                 <MudItem xs="12">
                                     <MudCheckBox T="bool" Label="Opção ativa" @bind-Value="opcao.Ativa" Disabled="@Disabled" />

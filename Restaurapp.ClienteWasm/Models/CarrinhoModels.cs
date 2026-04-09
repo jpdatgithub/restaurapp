@@ -6,6 +6,7 @@ namespace Restaurapp.ClienteWasm.Models
         public string NomeSecao { get; set; } = string.Empty;
         public string NomeOpcao { get; set; } = string.Empty;
         public int Quantidade { get; set; }
+        public int QuantidadeInclusa { get; set; }
         public decimal PrecoDeltaUnitario { get; set; }
     }
 

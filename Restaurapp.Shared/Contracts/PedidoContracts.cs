@@ -59,6 +59,8 @@ public class ItemDePedidoOpcaoDto
     public string NomeSecao { get; set; } = string.Empty;
     public string NomeOpcao { get; set; } = string.Empty;
     public int Quantidade { get; set; }
+    public int QuantidadeInclusa { get; set; }
+    public int QuantidadeCobradaExtra { get; set; }
     public decimal PrecoUnitarioDelta { get; set; }
     public decimal SubtotalDelta { get; set; }
 }

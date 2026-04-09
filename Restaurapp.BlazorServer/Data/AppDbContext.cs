@@ -188,6 +188,9 @@ namespace Restaurapp.BlazorServer.Data
                 entity.Property(o => o.QuantidadeMax)
                     .IsRequired();
 
+                entity.Property(o => o.Inclusos)
+                    .IsRequired(false);
+
                 entity.Property(o => o.Ativa)
                     .IsRequired();
 
@@ -313,6 +316,12 @@ namespace Restaurapp.BlazorServer.Data
 
                 entity.Property(o => o.SubtotalDeltaSnapshot)
                     .HasPrecision(18, 2)
+                    .IsRequired();
+
+                entity.Property(o => o.QuantidadeInclusa)
+                    .IsRequired();
+
+                entity.Property(o => o.QuantidadeCobradaExtra)
                     .IsRequired();
 
                 entity.HasOne(o => o.ItemDePedido)

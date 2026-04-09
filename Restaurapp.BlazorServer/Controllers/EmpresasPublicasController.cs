@@ -82,7 +82,8 @@ namespace Restaurapp.BlazorServer.Controllers
                                     Descricao = o.Descricao,
                                     PrecoDelta = o.PrecoDelta,
                                     QuantidadeMin = o.QuantidadeMin,
-                                    QuantidadeMax = o.QuantidadeMax
+                                    QuantidadeMax = o.QuantidadeMax,
+                                    Inclusos = o.Inclusos
                                 }).ToList()
                         }).ToList()
                 })

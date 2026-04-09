@@ -12,6 +12,7 @@ namespace Restaurapp.BlazorServer.Services
             decimal PrecoDelta,
             int QuantidadeMin,
             int QuantidadeMax,
+            int? Inclusos,
             bool Ativa = true);
 
         public sealed record ProdutoOpcaoSecaoInput(
@@ -198,6 +199,14 @@ namespace Restaurapp.BlazorServer.Services
                     var quantidadeMax = opcao.QuantidadeMax <= 0
                         ? Math.Max(1, quantidadeMin == 0 ? 1 : quantidadeMin)
                         : Math.Max(opcao.QuantidadeMax, quantidadeMin == 0 ? 1 : quantidadeMin);
+                    var inclusos = Math.Max(0, opcao.Inclusos ?? 0);
+
+                    if (!secao.PermitirQuantidade)
+                    {
+                        inclusos = Math.Min(inclusos, 1);
+                    }
+
+                    inclusos = Math.Min(inclusos, quantidadeMax);
 
                     opcoes.Add(new ProdutoOpcao
                     {
@@ -206,6 +215,7 @@ namespace Restaurapp.BlazorServer.Services
                         PrecoDelta = opcao.PrecoDelta,
                         QuantidadeMin = quantidadeMin,
                         QuantidadeMax = quantidadeMax,
+                        Inclusos = inclusos > 0 ? inclusos : null,
                         Ativa = opcao.Ativa,
                         Ordem = indiceOpcao++
                     });

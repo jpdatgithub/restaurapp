@@ -41,18 +41,39 @@
                             {
                                 <MudPaper Class="pa-2" Elevation="0" Outlined="true">
                                     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="2">
-                                        <div style="flex:1;min-width:0;">
-                                            <MudText Typo="Typo.body1">@opcao.Nome</MudText>
-                                            @if (!string.IsNullOrWhiteSpace(opcao.Descricao))
-                                            {
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@opcao.Descricao</MudText>
-                                            }
+                                        <div style="flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px;">
+                                            <div
+                                                style="width:24px;height:24px;border-radius:6px;border:1px dashed rgba(0,0,0,0.18);background:rgba(0,0,0,0.03);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                                <MudIcon Icon="@Icons.Material.Filled.Image" Size="Size.Small"
+                                                         Color="Color.Secondary" />
+                                            </div>
+                                            <div style="min-width:0;">
+                                                <MudText Typo="Typo.body1">@opcao.Nome</MudText>
+
+                                                @if (!string.IsNullOrWhiteSpace(opcao.Descricao))
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@opcao.Descricao</MudText>
+                                                }
+
+                                                @if (ObterInclusosConfigurados(opcao) > 0)
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Info">@ObterTextoInclusos(opcao)</MudText>
+                                                }
+                                            </div>
                                         </div>
 
-                                        <MudText Typo="Typo.body2" Color="@(opcao.PrecoDelta >= 0 ? Color.Primary : Color.Success)">
-                                            @(opcao.PrecoDelta >= 0 ? "+" : string.Empty)@opcao.PrecoDelta.ToString("C",
-                                            culturaPtBr)
-                                        </MudText>
+                                        <div style="min-width:140px;text-align:right;">
+                                            <MudText Typo="Typo.body2"
+                                                     Color="@(opcao.PrecoDelta >= 0 ? Color.Primary : Color.Success)">
+                                                @ObterRotuloPrecoOpcao(opcao)
+                                            </MudText>
+                                            @if (ObterQuantidadeCobradaExtra(opcao) > 0)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    Extra atual: @CalcularSubtotalOpcao(opcao).ToString("C", culturaPtBr)
+                                                </MudText>
+                                            }
+                                        </div>
 
                                         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                                             <MudIconButton Icon="@Icons.Material.Filled.Remove" Variant="Variant.Outlined"
@@ -116,9 +137,10 @@
         {
             foreach (var opcao in secao.Opcoes)
             {
-                if (opcao.QuantidadeMin > 0)
+                var quantidadeInicial = ObterQuantidadeInicial(secao, opcao);
+                if (quantidadeInicial > 0)
                 {
-                    quantidadesSelecionadas[opcao.Id] = opcao.QuantidadeMin;
+                    quantidadesSelecionadas[opcao.Id] = quantidadeInicial;
                 }
             }
         }
@@ -145,6 +167,32 @@
         return quantidadesSelecionadas.TryGetValue(opcao.Id, out var quantidade)
             ? quantidade
             : 0;
+    }
+
+    private int ObterQuantidadeInicial(ProdutoOpcaoSecaoCatalogoDto secao, ProdutoOpcaoCatalogoDto opcao)
+    {
+        var quantidadePadrao = Math.Max(ObterQuantidadeMinima(opcao), ObterInclusosConfigurados(opcao));
+        return Math.Min(ObterQuantidadeMaxima(secao, opcao), quantidadePadrao);
+    }
+
+    private static int ObterInclusosConfigurados(ProdutoOpcaoCatalogoDto opcao)
+    {
+        return Math.Max(0, opcao.Inclusos ?? 0);
+    }
+
+    private int ObterQuantidadeInclusa(ProdutoOpcaoCatalogoDto opcao)
+    {
+        return Math.Min(ObterQuantidadeSelecionada(opcao), ObterInclusosConfigurados(opcao));
+    }
+
+    private int ObterQuantidadeCobradaExtra(ProdutoOpcaoCatalogoDto opcao)
+    {
+        return Math.Max(0, ObterQuantidadeSelecionada(opcao) - ObterInclusosConfigurados(opcao));
+    }
+
+    private decimal CalcularSubtotalOpcao(ProdutoOpcaoCatalogoDto opcao)
+    {
+        return ObterQuantidadeCobradaExtra(opcao) * opcao.PrecoDelta;
     }
 
     private void AumentarQuantidade(ProdutoOpcaoSecaoCatalogoDto secao, ProdutoOpcaoCatalogoDto opcao)
@@ -198,9 +246,27 @@
     {
         var totalOpcoes = Produto.OpcoesSecoes
             .SelectMany(s => s.Opcoes)
-            .Sum(opcao => ObterQuantidadeSelecionada(opcao) * opcao.PrecoDelta);
+            .Sum(CalcularSubtotalOpcao);
 
         return Produto.Preco + totalOpcoes;
+    }
+
+    private string ObterTextoInclusos(ProdutoOpcaoCatalogoDto opcao)
+    {
+        var inclusos = ObterInclusosConfigurados(opcao);
+        return inclusos == 1
+            ? "1 unidade já inclusa no preço base"
+            : $"{inclusos} unidades já inclusas no preço base";
+    }
+
+    private string ObterRotuloPrecoOpcao(ProdutoOpcaoCatalogoDto opcao)
+    {
+        var prefixo = opcao.PrecoDelta >= 0 ? "+" : string.Empty;
+        var valorFormatado = opcao.PrecoDelta.ToString("C", culturaPtBr);
+
+        return ObterInclusosConfigurados(opcao) > 0
+            ? $"{prefixo}{valorFormatado} por extra"
+            : $"{prefixo}{valorFormatado}";
     }
 
     private async Task Confirmar()
@@ -227,6 +293,7 @@
                 NomeSecao = x.Secao.Nome,
                 NomeOpcao = x.Opcao.Nome,
                 Quantidade = x.Quantidade,
+                QuantidadeInclusa = ObterQuantidadeInclusa(x.Opcao),
                 PrecoDeltaUnitario = x.Opcao.PrecoDelta
             })
             .ToList();

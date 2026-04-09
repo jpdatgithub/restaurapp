@@ -9,6 +9,7 @@ namespace Restaurapp.BlazorServer.Models
         public decimal PrecoDelta { get; set; }
         public int QuantidadeMin { get; set; }
         public int QuantidadeMax { get; set; } = 1;
+        public int? Inclusos { get; set; }
         public bool Ativa { get; set; } = true;
 
         public ProdutoOpcaoEdicaoModel Clone() => new()
@@ -18,6 +19,7 @@ namespace Restaurapp.BlazorServer.Models
             PrecoDelta = PrecoDelta,
             QuantidadeMin = QuantidadeMin,
             QuantidadeMax = QuantidadeMax,
+            Inclusos = Inclusos,
             Ativa = Ativa
         };
 
@@ -27,6 +29,7 @@ namespace Restaurapp.BlazorServer.Models
             PrecoDelta,
             QuantidadeMin,
             QuantidadeMax,
+            Inclusos,
             Ativa);
 
         public static ProdutoOpcaoEdicaoModel FromEntity(ProdutoOpcao opcao) => new()
@@ -36,6 +39,7 @@ namespace Restaurapp.BlazorServer.Models
             PrecoDelta = opcao.PrecoDelta,
             QuantidadeMin = opcao.QuantidadeMin,
             QuantidadeMax = opcao.QuantidadeMax,
+            Inclusos = opcao.Inclusos,
             Ativa = opcao.Ativa
         };
     }
