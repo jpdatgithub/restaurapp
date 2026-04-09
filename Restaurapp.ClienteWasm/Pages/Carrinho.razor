@@ -39,17 +39,28 @@ else
             <MudTh></MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd DataLabel="Produto">@context.NomeProduto</MudTd>
+            <MudTd DataLabel="Produto">
+                <div>@context.NomeProduto</div>
+                @if (context.OpcoesSelecionadas.Any())
+                {
+                    @foreach (var opcao in context.OpcoesSelecionadas.OrderBy(o => o.NomeSecao).ThenBy(o => o.NomeOpcao))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            @opcao.NomeSecao: @opcao.NomeOpcao x@opcao.Quantidade
+                        </MudText>
+                    }
+                }
+            </MudTd>
             <MudTd DataLabel="Preço">@context.PrecoUnitario.ToString("C", culturaPtBr)</MudTd>
             <MudTd DataLabel="Quantidade">
                 <MudNumericField T="int" Value="@context.Quantidade"
-                                 ValueChanged="(novaQuantidade) => AtualizarQuantidadeAsync(context.ProdutoId, novaQuantidade)" Min="1"
+                                 ValueChanged="(novaQuantidade) => AtualizarQuantidadeAsync(context.ItemKey, novaQuantidade)" Min="1"
                                  Max="99" Immediate="true" HideSpinButtons="false" Style="width: 100px;" />
             </MudTd>
             <MudTd DataLabel="Subtotal">@((context.PrecoUnitario * context.Quantidade).ToString("C", culturaPtBr))</MudTd>
             <MudTd DataLabel="Ações">
                 <MudButton Variant="Variant.Text" Color="Color.Error" Size="Size.Small"
-                           OnClick="() => RemoverItemAsync(context.ProdutoId)">
+                           OnClick="() => RemoverItemAsync(context.ItemKey)">
                     Remover
                 </MudButton>
             </MudTd>
@@ -122,15 +133,15 @@ else
         carregando = false;
     }
 
-    private async Task AtualizarQuantidadeAsync(int produtoId, int quantidade)
+    private async Task AtualizarQuantidadeAsync(string itemKey, int quantidade)
     {
-        await CarrinhoService.UpdateQuantidadeAsync(produtoId, quantidade);
+        await CarrinhoService.UpdateQuantidadeAsync(itemKey, quantidade);
         snapshot = await CarrinhoService.GetSnapshotAsync();
     }
 
-    private async Task RemoverItemAsync(int produtoId)
+    private async Task RemoverItemAsync(string itemKey)
     {
-        await CarrinhoService.RemoveItemAsync(produtoId);
+        await CarrinhoService.RemoveItemAsync(itemKey);
         snapshot = await CarrinhoService.GetSnapshotAsync();
     }
 
@@ -196,7 +207,14 @@ else
                 .Select(i => new CheckoutPedidoItemRequest
                 {
                     ProdutoId = i.ProdutoId,
-                    Quantidade = i.Quantidade
+                    Quantidade = i.Quantidade,
+                    Opcoes = i.OpcoesSelecionadas
+                        .Select(o => new CheckoutPedidoItemOpcaoRequest
+                        {
+                            ProdutoOpcaoId = o.ProdutoOpcaoId,
+                            Quantidade = o.Quantidade
+                        })
+                        .ToList()
                 })
                 .ToList()
         };

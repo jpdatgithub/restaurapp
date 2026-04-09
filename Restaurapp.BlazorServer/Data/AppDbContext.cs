@@ -27,9 +27,12 @@ namespace Restaurapp.BlazorServer.Data
         public DbSet<MagicRegisterToken> MagicRegisterTokens { get; set; }
         public DbSet<Transacao> Transacoes { get; set; }
         public DbSet<Produto> Produtos { get; set; }
+        public DbSet<ProdutoOpcaoSecao> ProdutoOpcoesSecoes { get; set; }
+        public DbSet<ProdutoOpcao> ProdutoOpcoes { get; set; }
         public DbSet<Pedido> Pedidos { get; set; }
         public DbSet<ContaMesa> ContasMesa { get; set; }
         public DbSet<ItemDePedido> ItensDePedido { get; set; }
+        public DbSet<ItemDePedidoOpcaoSnapshot> ItensDePedidoOpcoesSnapshots { get; set; }
         public DbSet<HistoricoStatusPedido> HistoricosStatusPedidos { get; set; }
         public DbSet<ClienteUsuario> ClientesUsuarios { get; set; }
         public DbSet<Empresa> Empresas { get; set; }
@@ -130,6 +133,70 @@ namespace Restaurapp.BlazorServer.Data
 
                 entity.Property(p => p.ImagemUrl)
                     .HasMaxLength(500);
+
+                entity.HasMany(p => p.OpcoesSecoes)
+                    .WithOne(s => s.Produto)
+                    .HasForeignKey(s => s.ProdutoId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<ProdutoOpcaoSecao>(entity =>
+            {
+                entity.ToTable("ProdutosOpcoesSecoes");
+
+                entity.HasKey(s => s.Id);
+
+                entity.Property(s => s.Nome)
+                    .IsRequired()
+                    .HasMaxLength(120);
+
+                entity.Property(s => s.MinSelecoes)
+                    .IsRequired();
+
+                entity.Property(s => s.MaxSelecoes)
+                    .IsRequired();
+
+                entity.Property(s => s.PermitirQuantidade)
+                    .IsRequired();
+
+                entity.Property(s => s.Ativa)
+                    .IsRequired();
+
+                entity.HasIndex(s => new { s.ProdutoId, s.Ordem });
+            });
+
+            modelBuilder.Entity<ProdutoOpcao>(entity =>
+            {
+                entity.ToTable("ProdutosOpcoes");
+
+                entity.HasKey(o => o.Id);
+
+                entity.Property(o => o.Nome)
+                    .IsRequired()
+                    .HasMaxLength(120);
+
+                entity.Property(o => o.Descricao)
+                    .HasMaxLength(300);
+
+                entity.Property(o => o.PrecoDelta)
+                    .HasPrecision(18, 2)
+                    .IsRequired();
+
+                entity.Property(o => o.QuantidadeMin)
+                    .IsRequired();
+
+                entity.Property(o => o.QuantidadeMax)
+                    .IsRequired();
+
+                entity.Property(o => o.Ativa)
+                    .IsRequired();
+
+                entity.HasOne(o => o.Secao)
+                    .WithMany(s => s.Opcoes)
+                    .HasForeignKey(o => o.ProdutoOpcaoSecaoId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasIndex(o => new { o.ProdutoOpcaoSecaoId, o.Ordem });
             });
 
             // ----------------------
@@ -223,6 +290,34 @@ namespace Restaurapp.BlazorServer.Data
                 entity.HasOne(i => i.Pedido)
                     .WithMany(p => p.Itens)
                     .HasForeignKey(i => i.PedidoId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<ItemDePedidoOpcaoSnapshot>(entity =>
+            {
+                entity.ToTable("ItensDePedidoOpcoesSnapshots");
+
+                entity.HasKey(o => o.Id);
+
+                entity.Property(o => o.NomeSecaoSnapshot)
+                    .IsRequired()
+                    .HasMaxLength(120);
+
+                entity.Property(o => o.NomeOpcaoSnapshot)
+                    .IsRequired()
+                    .HasMaxLength(120);
+
+                entity.Property(o => o.PrecoUnitarioDeltaSnapshot)
+                    .HasPrecision(18, 2)
+                    .IsRequired();
+
+                entity.Property(o => o.SubtotalDeltaSnapshot)
+                    .HasPrecision(18, 2)
+                    .IsRequired();
+
+                entity.HasOne(o => o.ItemDePedido)
+                    .WithMany(i => i.OpcoesSelecionadas)
+                    .HasForeignKey(o => o.ItemDePedidoId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
 

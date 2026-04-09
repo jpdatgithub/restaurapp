@@ -662,7 +662,18 @@
                             <MudTh Style="text-align: right">Subtotal</MudTh>
                         </HeaderContent>
                         <RowTemplate>
-                            <MudTd DataLabel="Item">@context.NomeProdutoSnapshot</MudTd>
+                            <MudTd DataLabel="Item">
+                                <div>@context.NomeProdutoSnapshot</div>
+                                @if (context.OpcoesSelecionadas.Any())
+                                {
+                                    @foreach (var opcao in context.OpcoesSelecionadas.OrderBy(o => o.NomeSecaoSnapshot).ThenBy(o => o.NomeOpcaoSnapshot))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            @opcao.NomeSecaoSnapshot: @opcao.NomeOpcaoSnapshot x@opcao.Quantidade
+                                        </MudText>
+                                    }
+                                }
+                            </MudTd>
                             <MudTd DataLabel="Qtd" Style="text-align: right">@context.Quantidade</MudTd>
                             <MudTd DataLabel="Subtotal" Style="text-align: right">@context.SubtotalItem.ToString("C2", culturaPtBr)</MudTd>
                         </RowTemplate>

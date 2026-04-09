@@ -33,10 +33,15 @@ namespace Restaurapp.ClienteWasm.Services
                 Itens = _state.Itens
                     .Select(i => new CarrinhoItemState
                     {
+                        ItemKey = i.ItemKey,
                         ProdutoId = i.ProdutoId,
                         NomeProduto = i.NomeProduto,
+                        PrecoBaseProduto = i.PrecoBaseProduto,
                         PrecoUnitario = i.PrecoUnitario,
-                        Quantidade = i.Quantidade
+                        Quantidade = i.Quantidade,
+                        OpcoesSelecionadas = i.OpcoesSelecionadas
+                            .Select(CloneOpcao)
+                            .ToList()
                     })
                     .ToList(),
                 QuantidadeTotalItens = _state.Itens.Sum(i => i.Quantidade),
@@ -49,8 +54,9 @@ namespace Restaurapp.ClienteWasm.Services
             string empresaNome,
             int produtoId,
             string nomeProduto,
-            decimal precoUnitario,
-            int quantidade = 1)
+            decimal precoBaseProduto,
+            int quantidade = 1,
+            List<CarrinhoItemOpcaoState>? opcoesSelecionadas = null)
         {
             await EnsureLoadedAsync();
 
@@ -67,15 +73,27 @@ namespace Restaurapp.ClienteWasm.Services
             _state.EmpresaId = empresaId;
             _state.EmpresaNome = empresaNome;
 
-            var itemExistente = _state.Itens.FirstOrDefault(i => i.ProdutoId == produtoId);
+            var opcoesNormalizadas = (opcoesSelecionadas ?? new List<CarrinhoItemOpcaoState>())
+                .Where(o => o.ProdutoOpcaoId > 0 && o.Quantidade > 0)
+                .OrderBy(o => o.ProdutoOpcaoId)
+                .Select(CloneOpcao)
+                .ToList();
+
+            var itemKey = ConstruirItemKey(produtoId, opcoesNormalizadas);
+            var precoUnitarioFinal = precoBaseProduto + opcoesNormalizadas.Sum(o => o.PrecoDeltaUnitario * o.Quantidade);
+
+            var itemExistente = _state.Itens.FirstOrDefault(i => i.ItemKey == itemKey);
             if (itemExistente is null)
             {
                 _state.Itens.Add(new CarrinhoItemState
                 {
+                    ItemKey = itemKey,
                     ProdutoId = produtoId,
                     NomeProduto = nomeProduto,
-                    PrecoUnitario = precoUnitario,
-                    Quantidade = quantidade
+                    PrecoBaseProduto = precoBaseProduto,
+                    PrecoUnitario = precoUnitarioFinal,
+                    Quantidade = quantidade,
+                    OpcoesSelecionadas = opcoesNormalizadas
                 });
             }
             else
@@ -87,11 +105,18 @@ namespace Restaurapp.ClienteWasm.Services
             return (true, null);
         }
 
-        public async Task UpdateQuantidadeAsync(int produtoId, int quantidade)
+        public Task UpdateQuantidadeAsync(int produtoId, int quantidade)
+        {
+            return UpdateQuantidadeAsync(produtoId.ToString(), quantidade, produtoId);
+        }
+
+        public async Task UpdateQuantidadeAsync(string itemKey, int quantidade, int? produtoIdFallback = null)
         {
             await EnsureLoadedAsync();
 
-            var item = _state.Itens.FirstOrDefault(i => i.ProdutoId == produtoId);
+            var item = _state.Itens.FirstOrDefault(i => i.ItemKey == itemKey)
+                ?? (produtoIdFallback.HasValue ? _state.Itens.FirstOrDefault(i => i.ProdutoId == produtoIdFallback.Value) : null);
+
             if (item is null)
             {
                 return;
@@ -115,11 +140,18 @@ namespace Restaurapp.ClienteWasm.Services
             await SaveAsync();
         }
 
-        public async Task RemoveItemAsync(int produtoId)
+        public Task RemoveItemAsync(int produtoId)
+        {
+            return RemoveItemAsync(produtoId.ToString(), produtoId);
+        }
+
+        public async Task RemoveItemAsync(string itemKey, int? produtoIdFallback = null)
         {
             await EnsureLoadedAsync();
 
-            var item = _state.Itens.FirstOrDefault(i => i.ProdutoId == produtoId);
+            var item = _state.Itens.FirstOrDefault(i => i.ItemKey == itemKey)
+                ?? (produtoIdFallback.HasValue ? _state.Itens.FirstOrDefault(i => i.ProdutoId == produtoIdFallback.Value) : null);
+
             if (item is null)
             {
                 return;
@@ -158,6 +190,7 @@ namespace Restaurapp.ClienteWasm.Services
                     if (parsed is not null)
                     {
                         _state = parsed;
+                        NormalizarCarrinhoCarregado();
                     }
                 }
             }
@@ -169,10 +202,50 @@ namespace Restaurapp.ClienteWasm.Services
             _isLoaded = true;
         }
 
+        private void NormalizarCarrinhoCarregado()
+        {
+            foreach (var item in _state.Itens)
+            {
+                item.OpcoesSelecionadas ??= new List<CarrinhoItemOpcaoState>();
+
+                if (item.PrecoBaseProduto <= 0)
+                {
+                    item.PrecoBaseProduto = item.PrecoUnitario;
+                }
+
+                if (string.IsNullOrWhiteSpace(item.ItemKey))
+                {
+                    item.ItemKey = ConstruirItemKey(item.ProdutoId, item.OpcoesSelecionadas);
+                }
+            }
+        }
+
         private async Task SaveAsync()
         {
             var json = JsonSerializer.Serialize(_state, _jsonOptions);
             await _jsRuntime.InvokeVoidAsync("localStorage.setItem", CarrinhoStorageKey, json);
+        }
+
+        private static CarrinhoItemOpcaoState CloneOpcao(CarrinhoItemOpcaoState opcao) => new()
+        {
+            ProdutoOpcaoId = opcao.ProdutoOpcaoId,
+            NomeSecao = opcao.NomeSecao,
+            NomeOpcao = opcao.NomeOpcao,
+            Quantidade = opcao.Quantidade,
+            PrecoDeltaUnitario = opcao.PrecoDeltaUnitario
+        };
+
+        private static string ConstruirItemKey(int produtoId, IEnumerable<CarrinhoItemOpcaoState>? opcoesSelecionadas)
+        {
+            var opcoes = opcoesSelecionadas?
+                .Where(o => o.ProdutoOpcaoId > 0 && o.Quantidade > 0)
+                .OrderBy(o => o.ProdutoOpcaoId)
+                .Select(o => $"{o.ProdutoOpcaoId}:{o.Quantidade}")
+                .ToList() ?? new List<string>();
+
+            return opcoes.Count == 0
+                ? $"produto:{produtoId}:padrao"
+                : $"produto:{produtoId}:{string.Join("|", opcoes)}";
         }
     }
 }

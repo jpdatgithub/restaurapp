@@ -41,10 +41,26 @@ public class CheckoutPedidoRequest
     public List<CheckoutPedidoItemRequest> Itens { get; set; } = new();
 }
 
+public class CheckoutPedidoItemOpcaoRequest
+{
+    public int ProdutoOpcaoId { get; set; }
+    public int Quantidade { get; set; }
+}
+
 public class CheckoutPedidoItemRequest
 {
     public int ProdutoId { get; set; }
     public int Quantidade { get; set; }
+    public List<CheckoutPedidoItemOpcaoRequest> Opcoes { get; set; } = new();
+}
+
+public class ItemDePedidoOpcaoDto
+{
+    public string NomeSecao { get; set; } = string.Empty;
+    public string NomeOpcao { get; set; } = string.Empty;
+    public int Quantidade { get; set; }
+    public decimal PrecoUnitarioDelta { get; set; }
+    public decimal SubtotalDelta { get; set; }
 }
 
 public class ItemDePedidoDto
@@ -54,6 +70,7 @@ public class ItemDePedidoDto
     public decimal PrecoUnitario { get; set; }
     public int Quantidade { get; set; }
     public decimal Subtotal { get; set; }
+    public List<ItemDePedidoOpcaoDto> Opcoes { get; set; } = new();
 }
 
 public class PedidoDto
@@ -155,6 +172,7 @@ public class ContaPedidoItemDto
     public int Quantidade { get; set; }
     public decimal PrecoUnitario { get; set; }
     public decimal Subtotal { get; set; }
+    public List<ItemDePedidoOpcaoDto> Opcoes { get; set; } = new();
 }
 
 public class GooglePayConfigResponse

@@ -25,6 +25,7 @@ namespace Restaurapp.BlazorServer.Services
             IQueryable<Pedido> query = _context.Pedidos
                 .AsNoTracking()
                 .Include(p => p.Itens)
+                    .ThenInclude(i => i.OpcoesSelecionadas)
                 .Include(p => p.HistoricoStatus);
 
             if (status.HasValue)
@@ -67,6 +68,7 @@ namespace Restaurapp.BlazorServer.Services
             IQueryable<Pedido> query = _context.Pedidos
                 .AsNoTracking()
                 .Include(p => p.Itens)
+                    .ThenInclude(i => i.OpcoesSelecionadas)
                 .Include(p => p.HistoricoStatus);
 
             if (status.HasValue)
@@ -107,6 +109,7 @@ namespace Restaurapp.BlazorServer.Services
             return await _context.Pedidos
                 .AsNoTracking()
                 .Include(p => p.Itens)
+                    .ThenInclude(i => i.OpcoesSelecionadas)
                 .Include(p => p.HistoricoStatus)
                 .FirstOrDefaultAsync(p => p.Id == id);
         }
@@ -181,6 +184,7 @@ namespace Restaurapp.BlazorServer.Services
             query = incluirItens
                 ? query.Include(c => c.Pedidos.Where(p => p.Status != StatusPedido.Cancelado))
                     .ThenInclude(p => p.Itens)
+                        .ThenInclude(i => i.OpcoesSelecionadas)
                 : query.Include(c => c.Pedidos.Where(p => p.Status != StatusPedido.Cancelado));
 
             return query;

@@ -58,6 +58,11 @@ namespace Restaurapp.BlazorServer.Controllers
                 return BadRequest(new { message = "ProdutoId e Quantidade devem ser maiores que zero." });
             }
 
+            if (request.Itens.Any(i => i.Opcoes.Any(o => o.ProdutoOpcaoId <= 0 || o.Quantidade <= 0)))
+            {
+                return BadRequest(new { message = "As opções selecionadas devem informar um ProdutoOpcaoId válido e quantidade maior que zero." });
+            }
+
             if (!string.IsNullOrWhiteSpace(request.NumeroMesa) && request.NumeroMesa.Trim().Length > 50)
             {
                 return BadRequest(new { message = "Número da mesa deve ter no máximo 50 caracteres." });
@@ -149,19 +154,38 @@ namespace Restaurapp.BlazorServer.Controllers
             }
 
             var itensAgrupados = request.Itens
-                .GroupBy(i => i.ProdutoId)
+                .Select(i => new
+                {
+                    ProdutoId = i.ProdutoId,
+                    Quantidade = i.Quantidade,
+                    Opcoes = (i.Opcoes ?? new List<CheckoutPedidoItemOpcaoRequest>())
+                        .Where(o => o.ProdutoOpcaoId > 0 && o.Quantidade > 0)
+                        .GroupBy(o => o.ProdutoOpcaoId)
+                        .Select(g => new CheckoutPedidoItemOpcaoRequest
+                        {
+                            ProdutoOpcaoId = g.Key,
+                            Quantidade = g.Sum(x => x.Quantidade)
+                        })
+                        .OrderBy(o => o.ProdutoOpcaoId)
+                        .ToList(),
+                    ChaveConfiguracao = ConstruirChaveConfiguracao(i.Opcoes)
+                })
+                .GroupBy(i => new { i.ProdutoId, i.ChaveConfiguracao })
                 .Select(g => new
                 {
-                    ProdutoId = g.Key,
-                    Quantidade = g.Sum(x => x.Quantidade)
+                    ProdutoId = g.Key.ProdutoId,
+                    Quantidade = g.Sum(x => x.Quantidade),
+                    Opcoes = g.First().Opcoes
                 })
                 .ToList();
 
-            var produtosIds = itensAgrupados.Select(i => i.ProdutoId).ToList();
+            var produtosIds = itensAgrupados.Select(i => i.ProdutoId).Distinct().ToList();
 
             var produtos = await _context.Produtos
                 .IgnoreQueryFilters()
                 .AsNoTracking()
+                .Include(p => p.OpcoesSecoes.Where(s => s.Ativa))
+                    .ThenInclude(s => s.Opcoes.Where(o => o.Ativa))
                 .Where(p => p.EmpresaId == request.EmpresaId && p.Ativo && produtosIds.Contains(p.Id))
                 .ToListAsync();
 
@@ -170,20 +194,19 @@ namespace Restaurapp.BlazorServer.Controllers
                 return NotFound(new { message = "Um ou mais produtos não foram encontrados para a empresa informada." });
             }
 
-            var itensDePedido = itensAgrupados
-                .Join(
-                    produtos,
-                    i => i.ProdutoId,
-                    p => p.Id,
-                    (item, produto) => new ItemDePedido
-                    {
-                        ProdutoId = produto.Id,
-                        NomeProdutoSnapshot = produto.Nome,
-                        PrecoUnitarioSnapshot = produto.Preco,
-                        Quantidade = item.Quantidade,
-                        SubtotalItem = produto.Preco * item.Quantidade
-                    })
-                .ToList();
+            var itensDePedido = new List<ItemDePedido>();
+            foreach (var item in itensAgrupados)
+            {
+                var produto = produtos.First(p => p.Id == item.ProdutoId);
+                var (itemDePedido, erroValidacao) = CriarItemDePedidoComOpcoes(produto, item.Quantidade, item.Opcoes);
+
+                if (itemDePedido is null)
+                {
+                    return BadRequest(new { message = erroValidacao ?? $"Não foi possível montar o item do produto {produto.Nome}." });
+                }
+
+                itensDePedido.Add(itemDePedido);
+            }
 
             var subtotal = itensDePedido.Sum(i => i.SubtotalItem);
             var desconto = 0m;
@@ -255,6 +278,125 @@ namespace Restaurapp.BlazorServer.Controllers
             return Ok(await MapearPedidoParaDtoAsync(pedido));
         }
 
+        private static string ConstruirChaveConfiguracao(IEnumerable<CheckoutPedidoItemOpcaoRequest>? opcoes)
+        {
+            if (opcoes is null)
+            {
+                return string.Empty;
+            }
+
+            return string.Join(
+                "|",
+                opcoes
+                    .Where(o => o.ProdutoOpcaoId > 0 && o.Quantidade > 0)
+                    .OrderBy(o => o.ProdutoOpcaoId)
+                    .Select(o => $"{o.ProdutoOpcaoId}:{o.Quantidade}"));
+        }
+
+        private static (ItemDePedido? Item, string? ErrorMessage) CriarItemDePedidoComOpcoes(
+            Produto produto,
+            int quantidade,
+            IReadOnlyCollection<CheckoutPedidoItemOpcaoRequest> opcoesSelecionadas)
+        {
+            if (quantidade <= 0)
+            {
+                return (null, "A quantidade do item precisa ser maior que zero.");
+            }
+
+            var secoesAtivas = produto.OpcoesSecoes
+                .Where(s => s.Ativa)
+                .OrderBy(s => s.Ordem)
+                .ToList();
+
+            var opcoesDisponiveis = secoesAtivas
+                .SelectMany(s => s.Opcoes.Where(o => o.Ativa).Select(o => new { Secao = s, Opcao = o }))
+                .ToDictionary(x => x.Opcao.Id, x => x);
+
+            var opcoesNormalizadas = opcoesSelecionadas
+                .Where(o => o.ProdutoOpcaoId > 0 && o.Quantidade > 0)
+                .GroupBy(o => o.ProdutoOpcaoId)
+                .Select(g => new CheckoutPedidoItemOpcaoRequest
+                {
+                    ProdutoOpcaoId = g.Key,
+                    Quantidade = g.Sum(x => x.Quantidade)
+                })
+                .ToList();
+
+            foreach (var opcaoSelecionada in opcoesNormalizadas)
+            {
+                if (!opcoesDisponiveis.TryGetValue(opcaoSelecionada.ProdutoOpcaoId, out var referencia))
+                {
+                    return (null, $"A opção #{opcaoSelecionada.ProdutoOpcaoId} não pertence ao produto {produto.Nome}.");
+                }
+
+                if (!referencia.Secao.PermitirQuantidade && opcaoSelecionada.Quantidade > 1)
+                {
+                    return (null, $"A seção {referencia.Secao.Nome} não permite quantidade maior que 1 por opção.");
+                }
+
+                if (opcaoSelecionada.Quantidade < referencia.Opcao.QuantidadeMin
+                    || opcaoSelecionada.Quantidade > referencia.Opcao.QuantidadeMax)
+                {
+                    return (null, $"A opção {referencia.Opcao.Nome} exige quantidade entre {referencia.Opcao.QuantidadeMin} e {referencia.Opcao.QuantidadeMax}.");
+                }
+            }
+
+            foreach (var secao in secoesAtivas)
+            {
+                var selecoesDaSecao = secao.Opcoes
+                    .Where(o => o.Ativa)
+                    .Select(o => new
+                    {
+                        Opcao = o,
+                        Quantidade = opcoesNormalizadas.FirstOrDefault(s => s.ProdutoOpcaoId == o.Id)?.Quantidade ?? 0
+                    })
+                    .Where(x => x.Quantidade > 0)
+                    .ToList();
+
+                var quantidadeSelecoes = selecoesDaSecao.Count;
+
+                if (quantidadeSelecoes < secao.MinSelecoes)
+                {
+                    return (null, $"A seção {secao.Nome} exige no mínimo {secao.MinSelecoes} opção(ões).");
+                }
+
+                if (secao.MaxSelecoes > 0 && quantidadeSelecoes > secao.MaxSelecoes)
+                {
+                    return (null, $"A seção {secao.Nome} permite no máximo {secao.MaxSelecoes} opção(ões).");
+                }
+            }
+
+            var snapshots = new List<ItemDePedidoOpcaoSnapshot>();
+            var subtotalOpcoes = 0m;
+
+            foreach (var opcaoSelecionada in opcoesNormalizadas)
+            {
+                var referencia = opcoesDisponiveis[opcaoSelecionada.ProdutoOpcaoId];
+                var subtotalDelta = referencia.Opcao.PrecoDelta * opcaoSelecionada.Quantidade * quantidade;
+                subtotalOpcoes += subtotalDelta;
+
+                snapshots.Add(new ItemDePedidoOpcaoSnapshot
+                {
+                    ProdutoOpcaoId = referencia.Opcao.Id,
+                    NomeSecaoSnapshot = referencia.Secao.Nome,
+                    NomeOpcaoSnapshot = referencia.Opcao.Nome,
+                    Quantidade = opcaoSelecionada.Quantidade,
+                    PrecoUnitarioDeltaSnapshot = referencia.Opcao.PrecoDelta,
+                    SubtotalDeltaSnapshot = subtotalDelta
+                });
+            }
+
+            return (new ItemDePedido
+            {
+                ProdutoId = produto.Id,
+                NomeProdutoSnapshot = produto.Nome,
+                PrecoUnitarioSnapshot = produto.Preco,
+                Quantidade = quantidade,
+                SubtotalItem = (produto.Preco * quantidade) + subtotalOpcoes,
+                OpcoesSelecionadas = snapshots
+            }, null);
+        }
+
         [HttpGet("api/pedidos/{id:int}")]
         [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
         public async Task<IActionResult> GetPedido(int id)
@@ -269,6 +411,7 @@ namespace Restaurapp.BlazorServer.Controllers
                 .IgnoreQueryFilters()
                 .AsNoTracking()
                 .Include(p => p.Itens)
+                    .ThenInclude(i => i.OpcoesSelecionadas)
                 .Include(p => p.HistoricoStatus)
                 .FirstOrDefaultAsync(p => p.Id == id && p.ClienteUsuarioId == clienteId.Value);
 
@@ -384,6 +527,7 @@ namespace Restaurapp.BlazorServer.Controllers
                 .AsNoTracking()
                 .Where(p => p.ContaMesaId == conta.Id && p.Status != StatusPedido.Cancelado)
                 .Include(p => p.Itens)
+                    .ThenInclude(i => i.OpcoesSelecionadas)
                 .OrderBy(p => p.CreatedAtUtc)
                 .ToListAsync();
 
@@ -409,7 +553,18 @@ namespace Restaurapp.BlazorServer.Controllers
                         NomeProduto = i.NomeProdutoSnapshot,
                         Quantidade = i.Quantidade,
                         PrecoUnitario = i.PrecoUnitarioSnapshot,
-                        Subtotal = i.SubtotalItem
+                        Subtotal = i.SubtotalItem,
+                        Opcoes = i.OpcoesSelecionadas
+                            .OrderBy(o => o.NomeSecaoSnapshot)
+                            .ThenBy(o => o.NomeOpcaoSnapshot)
+                            .Select(o => new ItemDePedidoOpcaoDto
+                            {
+                                NomeSecao = o.NomeSecaoSnapshot,
+                                NomeOpcao = o.NomeOpcaoSnapshot,
+                                Quantidade = o.Quantidade,
+                                PrecoUnitarioDelta = o.PrecoUnitarioDeltaSnapshot,
+                                SubtotalDelta = o.SubtotalDeltaSnapshot
+                            }).ToList()
                     }).ToList()
                 }).ToList()
             };
@@ -967,7 +1122,18 @@ namespace Restaurapp.BlazorServer.Controllers
                     NomeProduto = i.NomeProdutoSnapshot,
                     PrecoUnitario = i.PrecoUnitarioSnapshot,
                     Quantidade = i.Quantidade,
-                    Subtotal = i.SubtotalItem
+                    Subtotal = i.SubtotalItem,
+                    Opcoes = i.OpcoesSelecionadas
+                        .OrderBy(o => o.NomeSecaoSnapshot)
+                        .ThenBy(o => o.NomeOpcaoSnapshot)
+                        .Select(o => new ItemDePedidoOpcaoDto
+                        {
+                            NomeSecao = o.NomeSecaoSnapshot,
+                            NomeOpcao = o.NomeOpcaoSnapshot,
+                            Quantidade = o.Quantidade,
+                            PrecoUnitarioDelta = o.PrecoUnitarioDeltaSnapshot,
+                            SubtotalDelta = o.SubtotalDeltaSnapshot
+                        }).ToList()
                 }).ToList(),
                 HistoricoStatus = pedido.HistoricoStatus
                     .OrderBy(h => h.DataStatusUtc)

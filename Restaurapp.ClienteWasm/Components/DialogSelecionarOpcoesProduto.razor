@@ -1,0 +1,299 @@
+@using System.Globalization
+@using Restaurapp.ClienteWasm.Models
+@using Restaurapp.Shared.Contracts
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Personalizar @Produto.Nome</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <div class="pa-4 pb-2">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Preço base: @Produto.Preco.ToString("C", culturaPtBr)
+            </MudText>
+
+            @if (!string.IsNullOrWhiteSpace(mensagemErro))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@mensagemErro</MudAlert>
+            }
+        </div>
+
+        @if (!Produto.OpcoesSecoes.Any())
+        {
+            <div class="px-4 pb-2">
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    Este produto não possui opções configuráveis.
+                </MudAlert>
+            </div>
+        }
+        else
+        {
+            <div style="max-height:min(60vh, 480px);overflow-y:auto;padding:0 24px 8px 24px;">
+                @foreach (var secao in Produto.OpcoesSecoes.OrderBy(s => s.Ordem))
+                {
+                    <MudPaper Class="pa-3 mb-3" Outlined="true">
+                        <MudText Typo="Typo.subtitle1">@secao.Nome</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">@ObterResumoSecao(secao)</MudText>
+
+                        <MudStack Spacing="2" Class="mt-3">
+                            @foreach (var opcao in secao.Opcoes)
+                            {
+                                <MudPaper Class="pa-2" Elevation="0" Outlined="true">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="2">
+                                        <div style="flex:1;min-width:0;">
+                                            <MudText Typo="Typo.body1">@opcao.Nome</MudText>
+                                            @if (!string.IsNullOrWhiteSpace(opcao.Descricao))
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@opcao.Descricao</MudText>
+                                            }
+                                        </div>
+
+                                        <MudText Typo="Typo.body2" Color="@(opcao.PrecoDelta >= 0 ? Color.Primary : Color.Success)">
+                                            @(opcao.PrecoDelta >= 0 ? "+" : string.Empty)@opcao.PrecoDelta.ToString("C",
+                                            culturaPtBr)
+                                        </MudText>
+
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                            <MudIconButton Icon="@Icons.Material.Filled.Remove" Variant="Variant.Outlined"
+                                                           Color="Color.Primary" Size="Size.Small" Disabled="@(!PodeDiminuirQuantidade(opcao))"
+                                                           OnClick="() => DiminuirQuantidade(opcao)" />
+                                            <MudPaper Outlined="true" Class="px-3 py-2" Style="min-width:48px;">
+                                                <MudText Typo="Typo.subtitle2" Class="text-center">
+                                                    @ObterQuantidadeSelecionada(opcao)</MudText>
+                                                </MudPaper>
+                                                <MudIconButton Icon="@Icons.Material.Filled.Add" Variant="Variant.Outlined"
+                                                               Color="Color.Primary" Size="Size.Small"
+                                                               Disabled="@(!PodeAumentarQuantidade(secao, opcao))"
+                                                               OnClick="() => AumentarQuantidade(secao, opcao)" />
+                                            </MudStack>
+                                        </MudStack>
+                                    </MudPaper>
+                                }
+                            </MudStack>
+                        </MudPaper>
+                    }
+                </div>
+            }
+
+            <MudDivider Class="mt-2" />
+
+            <div class="pa-4 pt-3">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.subtitle1">Preço final</MudText>
+                    <MudText Typo="Typo.h6">@CalcularPrecoUnitarioFinal().ToString("C", culturaPtBr)</MudText>
+                </MudStack>
+            </div>
+        </DialogContent>
+
+        <DialogActions>
+            <MudButton Variant="Variant.Text" OnClick="Cancelar">Cancelar</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Confirmar">Adicionar ao carrinho</MudButton>
+        </DialogActions>
+    </MudDialog>
+
+@code {
+    private static readonly CultureInfo culturaPtBr = CultureInfo.GetCultureInfo("pt-BR");
+
+    [Parameter]
+    public ProdutoCatalogoDto Produto { get; set; } = new();
+
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private readonly Dictionary<int, int> quantidadesSelecionadas = new();
+    private string? mensagemErro;
+    private bool inicializado;
+
+    protected override void OnParametersSet()
+    {
+        if (inicializado)
+        {
+            return;
+        }
+
+        foreach (var secao in Produto.OpcoesSecoes)
+        {
+            foreach (var opcao in secao.Opcoes)
+            {
+                if (opcao.QuantidadeMin > 0)
+                {
+                    quantidadesSelecionadas[opcao.Id] = opcao.QuantidadeMin;
+                }
+            }
+        }
+
+        inicializado = true;
+    }
+
+    private void AtualizarQuantidade(int opcaoId, int quantidade)
+    {
+        if (quantidade <= 0)
+        {
+            quantidadesSelecionadas.Remove(opcaoId);
+        }
+        else
+        {
+            quantidadesSelecionadas[opcaoId] = quantidade;
+        }
+
+        mensagemErro = null;
+    }
+
+    private int ObterQuantidadeSelecionada(ProdutoOpcaoCatalogoDto opcao)
+    {
+        return quantidadesSelecionadas.TryGetValue(opcao.Id, out var quantidade)
+            ? quantidade
+            : 0;
+    }
+
+    private void AumentarQuantidade(ProdutoOpcaoSecaoCatalogoDto secao, ProdutoOpcaoCatalogoDto opcao)
+    {
+        var quantidadeAtual = ObterQuantidadeSelecionada(opcao);
+        var quantidadeMaxima = ObterQuantidadeMaxima(secao, opcao);
+
+        if (quantidadeAtual >= quantidadeMaxima)
+        {
+            return;
+        }
+
+        AtualizarQuantidade(opcao.Id, quantidadeAtual + 1);
+    }
+
+    private void DiminuirQuantidade(ProdutoOpcaoCatalogoDto opcao)
+    {
+        var quantidadeAtual = ObterQuantidadeSelecionada(opcao);
+        var quantidadeMinima = ObterQuantidadeMinima(opcao);
+
+        if (quantidadeAtual <= quantidadeMinima)
+        {
+            return;
+        }
+
+        AtualizarQuantidade(opcao.Id, quantidadeAtual - 1);
+    }
+
+    private bool PodeAumentarQuantidade(ProdutoOpcaoSecaoCatalogoDto secao, ProdutoOpcaoCatalogoDto opcao)
+    {
+        return ObterQuantidadeSelecionada(opcao) < ObterQuantidadeMaxima(secao, opcao);
+    }
+
+    private bool PodeDiminuirQuantidade(ProdutoOpcaoCatalogoDto opcao)
+    {
+        return ObterQuantidadeSelecionada(opcao) > ObterQuantidadeMinima(opcao);
+    }
+
+    private static int ObterQuantidadeMinima(ProdutoOpcaoCatalogoDto opcao)
+    {
+        return Math.Max(0, opcao.QuantidadeMin);
+    }
+
+    private static int ObterQuantidadeMaxima(ProdutoOpcaoSecaoCatalogoDto secao, ProdutoOpcaoCatalogoDto opcao)
+    {
+        var maximoConfigurado = Math.Max(1, opcao.QuantidadeMax);
+        return secao.PermitirQuantidade ? maximoConfigurado : 1;
+    }
+
+    private decimal CalcularPrecoUnitarioFinal()
+    {
+        var totalOpcoes = Produto.OpcoesSecoes
+            .SelectMany(s => s.Opcoes)
+            .Sum(opcao => ObterQuantidadeSelecionada(opcao) * opcao.PrecoDelta);
+
+        return Produto.Preco + totalOpcoes;
+    }
+
+    private async Task Confirmar()
+    {
+        if (!ValidarSelecoes(out var erro))
+        {
+            mensagemErro = erro;
+            return;
+        }
+
+        var opcoesSelecionadas = Produto.OpcoesSecoes
+            .OrderBy(s => s.Ordem)
+            .SelectMany(secao => secao.Opcoes.Select(opcao => new { Secao = secao, Opcao = opcao }))
+            .Select(x => new
+            {
+                x.Secao,
+                x.Opcao,
+                Quantidade = ObterQuantidadeSelecionada(x.Opcao)
+            })
+            .Where(x => x.Quantidade > 0)
+            .Select(x => new CarrinhoItemOpcaoState
+            {
+                ProdutoOpcaoId = x.Opcao.Id,
+                NomeSecao = x.Secao.Nome,
+                NomeOpcao = x.Opcao.Nome,
+                Quantidade = x.Quantidade,
+                PrecoDeltaUnitario = x.Opcao.PrecoDelta
+            })
+            .ToList();
+
+        MudDialog.Close(DialogResult.Ok(new ResultadoSelecaoOpcoesProduto(
+            CalcularPrecoUnitarioFinal(),
+            opcoesSelecionadas)));
+
+        await Task.CompletedTask;
+    }
+
+    private bool ValidarSelecoes(out string? erro)
+    {
+        foreach (var secao in Produto.OpcoesSecoes)
+        {
+            var selecoes = secao.Opcoes
+                .Select(opcao => new
+                {
+                    Opcao = opcao,
+                    Quantidade = ObterQuantidadeSelecionada(opcao)
+                })
+                .Where(x => x.Quantidade > 0)
+                .ToList();
+
+            if (selecoes.Count < secao.MinSelecoes)
+            {
+                erro = $"A seção {secao.Nome} exige no mínimo {secao.MinSelecoes} opção(ões).";
+                return false;
+            }
+
+            if (secao.MaxSelecoes > 0 && selecoes.Count > secao.MaxSelecoes)
+            {
+                erro = $"A seção {secao.Nome} permite no máximo {secao.MaxSelecoes} opção(ões).";
+                return false;
+            }
+
+            foreach (var selecao in selecoes)
+            {
+                if (!secao.PermitirQuantidade && selecao.Quantidade > 1)
+                {
+                    erro = $"A seção {secao.Nome} não permite quantidade maior que 1 por opção.";
+                    return false;
+                }
+
+                if (selecao.Quantidade < selecao.Opcao.QuantidadeMin || selecao.Quantidade > selecao.Opcao.QuantidadeMax)
+                {
+                    erro = $"A opção {selecao.Opcao.Nome} exige quantidade entre {selecao.Opcao.QuantidadeMin} e {selecao.Opcao.QuantidadeMax}.";
+                    return false;
+                }
+            }
+        }
+
+        erro = null;
+        return true;
+    }
+
+    private string ObterResumoSecao(ProdutoOpcaoSecaoCatalogoDto secao)
+    {
+        var minimo = secao.MinSelecoes;
+        var maximo = secao.MaxSelecoes <= 0 ? "sem limite" : secao.MaxSelecoes.ToString();
+        var quantidade = secao.PermitirQuantidade ? "com quantidade" : "uma unidade por opção";
+        return $"Selecione de {minimo} até {maximo} opção(ões), {quantidade}.";
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+
+    public sealed record ResultadoSelecaoOpcoesProduto(
+        decimal PrecoUnitarioFinal,
+        List<CarrinhoItemOpcaoState> OpcoesSelecionadas);
+}

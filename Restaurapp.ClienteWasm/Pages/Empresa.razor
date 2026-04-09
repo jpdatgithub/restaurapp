@@ -4,6 +4,7 @@
 @inject ClienteAuthService AuthService
 @inject CarrinhoService CarrinhoService
 @inject NavigationManager Navigation
+@inject IDialogService DialogService
 
 <PageTitle>Empresa</PageTitle>
 
@@ -58,6 +59,12 @@ else
                             <MudText Typo="Typo.body2" Color="Color.Primary" Class="mt-2">
                                 @produto.Preco.ToString("C", CultureInfo.GetCultureInfo("pt-BR"))
                             </MudText>
+                            @if (produto.OpcoesSecoes.Any())
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="mt-2">
+                                    Personalizável
+                                </MudChip>
+                            }
                             <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
                                        StartIcon="@Icons.Material.Filled.AddShoppingCart"
                                        OnClick="() => AdicionarAoCarrinhoAsync(produto)">
@@ -95,13 +102,48 @@ else
             return;
         }
 
+        var opcoesSelecionadas = new List<CarrinhoItemOpcaoState>();
+
+        if (produto.OpcoesSecoes.Any())
+        {
+            var parameters = new DialogParameters<DialogSelecionarOpcoesProduto>
+            {
+                { x => x.Produto, produto }
+            };
+
+            var dialog = await DialogService.ShowAsync<DialogSelecionarOpcoesProduto>(
+                "Personalizar produto",
+                parameters,
+                new DialogOptions
+                {
+                    CloseButton = true,
+                    FullWidth = true,
+                    MaxWidth = MaxWidth.Medium,
+                    BackdropClick = false
+                });
+
+            var result = await dialog.Result;
+            if (result is null || result.Canceled)
+            {
+                mensagemSeverity = Severity.Info;
+                mensagem = "Adição ao carrinho cancelada.";
+                return;
+            }
+
+            if (result.Data is DialogSelecionarOpcoesProduto.ResultadoSelecaoOpcoesProduto selecao)
+            {
+                opcoesSelecionadas = selecao.OpcoesSelecionadas;
+            }
+        }
+
         var resultado = await CarrinhoService.AddItemAsync(
             empresa.Id,
             empresa.Nome,
             produto.Id,
             produto.Nome,
             produto.Preco,
-            1);
+            1,
+            opcoesSelecionadas);
 
         if (!resultado.Success)
         {

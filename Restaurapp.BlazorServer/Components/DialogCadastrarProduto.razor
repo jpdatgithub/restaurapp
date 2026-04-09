@@ -1,35 +1,44 @@
+@using Restaurapp.BlazorServer.Models
+
 <MudDialog>
     <TitleContent>
         <MudText Typo="Typo.h6">Cadastrar produto</MudText>
     </TitleContent>
     <DialogContent>
         <MudForm @ref="form" @bind-IsValid="success">
-            @if (!novaSecao)
-            {
-                <MudSelect T="string" Label="Seção" Required="true" RequiredError="Selecione uma seção."
-                           @bind-Value="secaoSelecionada">
-                    @foreach (var secao in secoesDisponiveis)
+            <MudTabs Rounded="true" PanelClass="pt-3">
+                <MudTabPanel Text="Básico" Icon="@Icons.Material.Filled.Inventory2">
+                    @if (!novaSecao)
                     {
-                        <MudSelectItem T="string" Value="@secao">@secao</MudSelectItem>
+                        <MudSelect T="string" Label="Seção" Required="true" RequiredError="Selecione uma seção."
+                                   @bind-Value="secaoSelecionada">
+                            @foreach (var secao in secoesDisponiveis)
+                            {
+                                <MudSelectItem T="string" Value="@secao">@secao</MudSelectItem>
+                            }
+                        </MudSelect>
                     }
-                </MudSelect>
-            }
-            else
-            {
-                <MudTextField T="string" Label="Nova seção" Required="true" RequiredError="Informe a seção." MaxLength="20"
-                              Counter="20" @bind-Value="novaSecaoNome" />
-            }
+                    else
+                    {
+                        <MudTextField T="string" Label="Nova seção" Required="true" RequiredError="Informe a seção." MaxLength="20"
+                                      Counter="20" @bind-Value="novaSecaoNome" />
+                    }
 
-            <MudCheckBox T="bool" Class="mt-2" Label="Nova seção?" @bind-Value="novaSecao" />
+                    <MudCheckBox T="bool" Class="mt-2" Label="Nova seção?" @bind-Value="novaSecao" />
 
-            <MudTextField T="string" Label="Nome" Required="true" RequiredError="Informe o nome do produto."
-                          Class="mt-2" @bind-Value="nome" />
+                    <MudTextField T="string" Label="Nome" Required="true" RequiredError="Informe o nome do produto."
+                                  Class="mt-2" @bind-Value="nome" />
 
-            <MudTextField T="string" Label="Descrição (opcional)" Class="mt-3" @bind-Value="descricao" />
+                    <MudTextField T="string" Label="Descrição (opcional)" Class="mt-3" @bind-Value="descricao" />
 
-            <MudNumericField T="decimal?" Label="Preço" Variant="Variant.Outlined" Min="0.01m"
-                             Adornment="Adornment.Start" AdornmentText="R$" Required="true"
-                             RequiredError="Informe o preço do produto." Class="mt-3" @bind-Value="preco" />
+                    <MudNumericField T="decimal?" Label="Preço" Variant="Variant.Outlined" Min="0.01m"
+                                     Adornment="Adornment.Start" AdornmentText="R$" Required="true"
+                                     RequiredError="Informe o preço do produto." Class="mt-3" @bind-Value="preco" />
+                </MudTabPanel>
+                <MudTabPanel Text="Opções" Icon="@Icons.Material.Filled.Tune">
+                    <ProdutoOpcoesEditor Secoes="opcoesSecoes" />
+                </MudTabPanel>
+            </MudTabs>
         </MudForm>
     </DialogContent>
     <DialogActions>
@@ -54,6 +63,7 @@
     private string nome = string.Empty;
     private string descricao = string.Empty;
     private decimal? preco;
+    private List<ProdutoOpcaoSecaoEdicaoModel> opcoesSecoes = new();
 
     protected override void OnInitialized()
     {
@@ -93,10 +103,16 @@
         secao,
         nome.Trim(),
         string.IsNullOrWhiteSpace(descricao) ? null : descricao.Trim(),
-        preco.Value)));
+        preco.Value,
+        opcoesSecoes.Select(s => s.Clone()).ToList())));
     }
 
     private void Cancel() => MudDialog.Cancel();
 
-    public sealed record NovoProdutoDialogResult(string Secao, string Nome, string? Descricao, decimal Valor);
+    public sealed record NovoProdutoDialogResult(
+        string Secao,
+        string Nome,
+        string? Descricao,
+        decimal Valor,
+        List<ProdutoOpcaoSecaoEdicaoModel> OpcoesSecoes);
 }

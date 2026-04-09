@@ -10,5 +10,6 @@ namespace Restaurapp.BlazorServer.Models
         public int Quantidade { get; set; }
         public decimal SubtotalItem { get; set; }
         public Pedido? Pedido { get; set; }
+        public List<ItemDePedidoOpcaoSnapshot> OpcoesSelecionadas { get; set; } = new();
     }
 }

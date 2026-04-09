@@ -1,0 +1,176 @@
+@using Restaurapp.BlazorServer.Models
+
+<MudStack Spacing="2">
+    <MudText Typo="Typo.body2" Color="Color.Secondary">
+        Cadastre seções e opções para personalizar o produto. Use quantidade mínima/máxima para representar escolhas obrigatórias, adicionais ou limites.
+    </MudText>
+    <MudText Typo="Typo.caption" Color="Color.Secondary">
+        Dica: em uma seção, <strong>máximo = 0</strong> significa sem limite de opções selecionadas.
+    </MudText>
+
+    @if (!Disabled)
+    {
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="AdicionarSecao">
+            Adicionar seção
+        </MudButton>
+    }
+
+    @if (Secoes.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true">
+            Este produto ainda não possui seções de opções.
+        </MudAlert>
+    }
+    else
+    {
+        @for (var i = 0; i < Secoes.Count; i++)
+        {
+            var secao = Secoes[i];
+            var indiceSecao = i;
+
+            <MudPaper Class="pa-3 mt-2" Outlined="true">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                    <MudText Typo="Typo.subtitle1">Seção @(i + 1)</MudText>
+                    @if (!Disabled)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="() => RemoverSecao(indiceSecao)" />
+                    }
+                </MudStack>
+
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string" Label="Nome da seção" @bind-Value="secao.Nome" Disabled="@Disabled" />
+                    </MudItem>
+                    <MudItem xs="6" md="3">
+                        <MudNumericField T="int" Label="Mín. seleções" Min="0" @bind-Value="secao.MinSelecoes" Disabled="@Disabled" />
+                    </MudItem>
+                    <MudItem xs="6" md="3">
+                        <MudNumericField T="int" Label="Máx. seleções" Min="0" @bind-Value="secao.MaxSelecoes" Disabled="@Disabled" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudCheckBox T="bool" Label="Permitir quantidade nas opções" @bind-Value="secao.PermitirQuantidade" Disabled="@Disabled" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudCheckBox T="bool" Label="Seção ativa" @bind-Value="secao.Ativa" Disabled="@Disabled" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudDivider Class="my-2" />
+
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.subtitle2">Opções</MudText>
+                    @if (!Disabled)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Add" OnClick="() => AdicionarOpcao(secao)">
+                            Adicionar opção
+                        </MudButton>
+                    }
+                </MudStack>
+
+                @if (secao.Opcoes.Count == 0)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+                        Nenhuma opção nesta seção.
+                    </MudText>
+                }
+                else
+                {
+                    @for (var j = 0; j < secao.Opcoes.Count; j++)
+                    {
+                        var opcao = secao.Opcoes[j];
+                        var indiceOpcao = j;
+
+                        <MudPaper Elevation="0" Class="pa-2 mt-2" Style="border:1px dashed rgba(0,0,0,0.18);">
+                            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                                <MudText Typo="Typo.body2">Opção @(j + 1)</MudText>
+                                @if (!Disabled)
+                                {
+                                    <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Color="Color.Error" Size="Size.Small"
+                                                   OnClick="() => RemoverOpcao(secao, indiceOpcao)" />
+                                }
+                            </MudStack>
+
+                            <MudGrid>
+                                <MudItem xs="12" md="5">
+                                    <MudTextField T="string" Label="Nome da opção" @bind-Value="opcao.Nome" Disabled="@Disabled" />
+                                </MudItem>
+                                <MudItem xs="12" md="3">
+                                    <MudNumericField T="decimal" Label="Δ preço" @bind-Value="opcao.PrecoDelta"
+                                                     Adornment="Adornment.Start" AdornmentText="R$" Disabled="@Disabled" />
+                                </MudItem>
+                                <MudItem xs="6" md="2">
+                                    <MudNumericField T="int" Label="Qtd mín." Min="0" @bind-Value="opcao.QuantidadeMin" Disabled="@Disabled" />
+                                </MudItem>
+                                <MudItem xs="6" md="2">
+                                    <MudNumericField T="int" Label="Qtd máx." Min="1" @bind-Value="opcao.QuantidadeMax" Disabled="@Disabled" />
+                                </MudItem>
+                                <MudItem xs="12">
+                                    <MudTextField T="string" Label="Descrição (opcional)" @bind-Value="opcao.Descricao" Disabled="@Disabled" />
+                                </MudItem>
+                                <MudItem xs="12">
+                                    <MudCheckBox T="bool" Label="Opção ativa" @bind-Value="opcao.Ativa" Disabled="@Disabled" />
+                                </MudItem>
+                            </MudGrid>
+                        </MudPaper>
+                    }
+                }
+            </MudPaper>
+        }
+    }
+</MudStack>
+
+@code {
+    [Parameter]
+    public List<ProdutoOpcaoSecaoEdicaoModel> Secoes { get; set; } = new();
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    private void AdicionarSecao()
+    {
+        Secoes.Add(new ProdutoOpcaoSecaoEdicaoModel
+        {
+            PermitirQuantidade = true,
+            Ativa = true,
+            Opcoes = new List<ProdutoOpcaoEdicaoModel>
+            {
+                new() { Nome = "Nova opção", QuantidadeMax = 1, Ativa = true }
+            }
+        });
+
+        StateHasChanged();
+    }
+
+    private void RemoverSecao(int indice)
+    {
+        if (indice < 0 || indice >= Secoes.Count)
+        {
+            return;
+        }
+
+        Secoes.RemoveAt(indice);
+        StateHasChanged();
+    }
+
+    private void AdicionarOpcao(ProdutoOpcaoSecaoEdicaoModel secao)
+    {
+        secao.Opcoes.Add(new ProdutoOpcaoEdicaoModel
+        {
+            QuantidadeMax = secao.PermitirQuantidade ? 5 : 1,
+            Ativa = true
+        });
+
+        StateHasChanged();
+    }
+
+    private void RemoverOpcao(ProdutoOpcaoSecaoEdicaoModel secao, int indice)
+    {
+        if (indice < 0 || indice >= secao.Opcoes.Count)
+        {
+            return;
+        }
+
+        secao.Opcoes.RemoveAt(indice);
+        StateHasChanged();
+    }
+}

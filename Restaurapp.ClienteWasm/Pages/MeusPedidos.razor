@@ -183,6 +183,16 @@
                                             <MudText Typo="Typo.body2">
                                                 @item.Quantidade x @item.NomeProduto - @item.Subtotal.ToString("C", culturaPtBr)
                                             </MudText>
+
+                                            @if (item.Opcoes.Any())
+                                            {
+                                                @foreach (var opcao in item.Opcoes.OrderBy(o => o.NomeSecao).ThenBy(o => o.NomeOpcao))
+                                                {
+                                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ms-3">
+                                                        @opcao.NomeSecao: @opcao.NomeOpcao x@opcao.Quantidade
+                                                    </MudText>
+                                                }
+                                            }
                                         }
                                     }
 

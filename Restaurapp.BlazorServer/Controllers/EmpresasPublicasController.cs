@@ -60,7 +60,31 @@ namespace Restaurapp.BlazorServer.Controllers
                     Id = p.Id,
                     Nome = p.Nome,
                     Preco = p.Preco,
-                    ImagemUrl = p.ImagemUrl
+                    ImagemUrl = p.ImagemUrl,
+                    OpcoesSecoes = p.OpcoesSecoes
+                        .Where(s => s.Ativa)
+                        .OrderBy(s => s.Ordem)
+                        .Select(s => new ProdutoOpcaoSecaoCatalogoDto
+                        {
+                            Id = s.Id,
+                            Nome = s.Nome,
+                            Ordem = s.Ordem,
+                            MinSelecoes = s.MinSelecoes,
+                            MaxSelecoes = s.MaxSelecoes,
+                            PermitirQuantidade = s.PermitirQuantidade,
+                            Opcoes = s.Opcoes
+                                .Where(o => o.Ativa)
+                                .OrderBy(o => o.Ordem)
+                                .Select(o => new ProdutoOpcaoCatalogoDto
+                                {
+                                    Id = o.Id,
+                                    Nome = o.Nome,
+                                    Descricao = o.Descricao,
+                                    PrecoDelta = o.PrecoDelta,
+                                    QuantidadeMin = o.QuantidadeMin,
+                                    QuantidadeMax = o.QuantidadeMax
+                                }).ToList()
+                        }).ToList()
                 })
                 .ToListAsync();
 

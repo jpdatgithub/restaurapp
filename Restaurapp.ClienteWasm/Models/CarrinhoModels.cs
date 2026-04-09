@@ -1,11 +1,23 @@
 namespace Restaurapp.ClienteWasm.Models
 {
+    public class CarrinhoItemOpcaoState
+    {
+        public int ProdutoOpcaoId { get; set; }
+        public string NomeSecao { get; set; } = string.Empty;
+        public string NomeOpcao { get; set; } = string.Empty;
+        public int Quantidade { get; set; }
+        public decimal PrecoDeltaUnitario { get; set; }
+    }
+
     public class CarrinhoItemState
     {
+        public string ItemKey { get; set; } = string.Empty;
         public int ProdutoId { get; set; }
         public string NomeProduto { get; set; } = string.Empty;
+        public decimal PrecoBaseProduto { get; set; }
         public decimal PrecoUnitario { get; set; }
         public int Quantidade { get; set; }
+        public List<CarrinhoItemOpcaoState> OpcoesSelecionadas { get; set; } = new();
     }
 
     public class CarrinhoState

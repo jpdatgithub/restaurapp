@@ -10,5 +10,6 @@ namespace Restaurapp.BlazorServer.Models
         public bool Ativo { get; set; } = true;
         public decimal Preco { get; set; }
         public string? ImagemUrl { get; set; }
+        public List<ProdutoOpcaoSecao> OpcoesSecoes { get; set; } = new();
     }
 }

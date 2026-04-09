@@ -71,6 +71,13 @@
                             <MudText Typo="Typo.h6">@produto.Nome</MudText>
                             <MudText Typo="Typo.subtitle2" Color="Color.Primary">@produto.Preco.ToString("C2")</MudText>
 
+                            @if (produto.OpcoesSecoes.Any())
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="mt-2">
+                                    @($"{produto.OpcoesSecoes.Count} seção(ões) de opções")
+                                </MudChip>
+                            }
+
                             <MudText Typo="Typo.body2" Class="descricao-clipada mt-2">@(string.IsNullOrWhiteSpace(produto.Descricao)
                                                                                                                     ? "Sem descrição" : produto.Descricao)</MudText>
                             </MudCardContent>
@@ -302,7 +309,9 @@
         var options = new DialogOptions
         {
             CloseOnEscapeKey = true,
-            BackdropClick = false
+            BackdropClick = false,
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true
         };
 
         var secoesExistentes = await ProdutoService.ObterSecoesAsync();
@@ -330,7 +339,8 @@
                 novoProduto.Secao,
                 novoProduto.Nome,
                 novoProduto.Descricao,
-                novoProduto.Valor);
+                novoProduto.Valor,
+                novoProduto.OpcoesSecoes.Select(s => s.ToInput()).ToList());
 
             await CarregarProdutosAsync();
             Snackbar.Add("Produto cadastrado com sucesso!", Severity.Success);
@@ -347,7 +357,7 @@
         {
             CloseOnEscapeKey = true,
             BackdropClick = true,
-            MaxWidth = MaxWidth.Small,
+            MaxWidth = MaxWidth.Medium,
             FullWidth = true
         };
 
