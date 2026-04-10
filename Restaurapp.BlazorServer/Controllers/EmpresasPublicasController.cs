@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Restaurapp.BlazorServer.Data;
+using Restaurapp.BlazorServer.Services;
 
 namespace Restaurapp.BlazorServer.Controllers
 {
@@ -9,10 +10,12 @@ namespace Restaurapp.BlazorServer.Controllers
     public class EmpresasPublicasController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IImagemPublicaService _imagemPublicaService;
 
-        public EmpresasPublicasController(AppDbContext context)
+        public EmpresasPublicasController(AppDbContext context, IImagemPublicaService imagemPublicaService)
         {
             _context = context;
+            _imagemPublicaService = imagemPublicaService;
         }
 
         [HttpGet]
@@ -88,6 +91,14 @@ namespace Restaurapp.BlazorServer.Controllers
                         }).ToList()
                 })
                 .ToListAsync();
+
+            foreach (var produto in empresa.Produtos)
+            {
+                if (!string.IsNullOrWhiteSpace(produto.ImagemUrl))
+                {
+                    produto.ImagemUrl = _imagemPublicaService.ConstruirUrlProduto(empresa.Id, produto.Id, produto.Nome);
+                }
+            }
 
             return Ok(empresa);
         }

@@ -10,6 +10,12 @@
             "type": "dotnet",
             "request": "launch",
             "projectPath": "${workspaceFolder}/Restaurapp.BlazorServer/Restaurapp.BlazorServer.csproj"
+        },
+        {
+            "name": "ClientWasm Apenas cliente",
+            "type": "dotnet",
+            "request": "launch",
+            "projectPath": "${workspaceFolder}/Restaurapp.ClienteWasm/Restaurapp.ClienteWasm.csproj"
         }
     ]
 }

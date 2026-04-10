@@ -7,6 +7,8 @@ namespace Restaurapp.BlazorServer.Services
         long MaxFileSizeBytes { get; }
         Task<string> SalvarImagemProdutoAsync(int empresaId, int produtoId, string nomeProduto, string nomeArquivoOriginal, Stream conteudo, string? imagemUrlAtual, CancellationToken cancellationToken = default);
         Task ExcluirImagemProdutoAsync(string? imagemUrl, CancellationToken cancellationToken = default);
+        string? TentarResolverCaminhoFisico(string? imagemUrl);
+        string GerarSlugPublico(string valor, string fallback = "produto");
     }
 
     public sealed class ProdutoImagemStorage : IProdutoImagemStorage
@@ -58,9 +60,11 @@ namespace Restaurapp.BlazorServer.Services
             var pastaEmpresa = Path.Combine(ObterRaizUploads(), $"restaurante-{empresaId}");
             Directory.CreateDirectory(pastaEmpresa);
 
-            var slug = GerarSlug(string.IsNullOrWhiteSpace(nomeProduto)
-                ? Path.GetFileNameWithoutExtension(nomeArquivoOriginal)
-                : nomeProduto);
+            var slug = GerarSlugPublico(
+                string.IsNullOrWhiteSpace(nomeProduto)
+                    ? Path.GetFileNameWithoutExtension(nomeArquivoOriginal)
+                    : nomeProduto,
+                "produto");
 
             var nomeArquivo = $"produto-{produtoId}-{slug}{extensao.ToLowerInvariant()}";
             var caminhoDestino = Path.Combine(pastaEmpresa, nomeArquivo);
@@ -86,7 +90,7 @@ namespace Restaurapp.BlazorServer.Services
                 return Task.CompletedTask;
             }
 
-            var caminhoArquivo = ResolverCaminhoFisico(imagemUrl);
+            var caminhoArquivo = TentarResolverCaminhoFisico(imagemUrl);
             if (caminhoArquivo is null || !File.Exists(caminhoArquivo))
             {
                 return Task.CompletedTask;
@@ -120,8 +124,13 @@ namespace Restaurapp.BlazorServer.Services
             return Path.GetFullPath(caminho);
         }
 
-        private string? ResolverCaminhoFisico(string imagemUrl)
+        public string? TentarResolverCaminhoFisico(string? imagemUrl)
         {
+            if (string.IsNullOrWhiteSpace(imagemUrl))
+            {
+                return null;
+            }
+
             var caminhoSemQuery = imagemUrl.Split('?', 2)[0];
             if (!caminhoSemQuery.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
             {
@@ -143,9 +152,11 @@ namespace Restaurapp.BlazorServer.Services
             return caminhoCompleto;
         }
 
-        private static string GerarSlug(string valor)
+        public string GerarSlugPublico(string valor, string fallback = "produto")
         {
-            var caracteres = valor
+            var origem = string.IsNullOrWhiteSpace(valor) ? fallback : valor;
+
+            var caracteres = origem
                 .Trim()
                 .ToLowerInvariant()
                 .Select(c => char.IsLetterOrDigit(c) ? c : '-')
@@ -160,7 +171,7 @@ namespace Restaurapp.BlazorServer.Services
 
             slug = slug.Trim('-');
 
-            return string.IsNullOrWhiteSpace(slug) ? "produto" : slug;
+            return string.IsNullOrWhiteSpace(slug) ? fallback : slug;
         }
     }
 }

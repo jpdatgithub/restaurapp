@@ -140,6 +140,7 @@ try
     builder.Services.AddScoped<ProdutoService>();
     builder.Services.AddScoped<PedidoService>();
     builder.Services.AddScoped<GooglePayService>();
+    builder.Services.AddScoped<IImagemPublicaService, ImagemPublicaService>();
     builder.Services.AddScoped<ServicoWorkflowPedido>();
     builder.Services.AddScoped<ServicoTempoRealPedidos>();
     builder.Services.AddScoped<ServicoResetBancoDados>();
