@@ -37,6 +37,11 @@
                                  Required="true" RequiredError="Informe o preço." Class="mt-3"
                                  @bind-Value="preco" />
 
+                <MudNumericField T="int?" Label="Ordem no cardápio" Variant="Variant.Outlined" Min="1"
+                                 Disabled="@(!modoEdicao)" Immediate="true" Class="mt-3"
+                                 HelperText="Use 1 para colocar o produto no topo da seção."
+                                 @bind-Value="ordemNoCardapio" />
+
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">Seção: @secao</MudText>
             </MudTabPanel>
             <MudTabPanel Text="Opções" Icon="@Icons.Material.Filled.Tune">
@@ -73,6 +78,7 @@
     private string nome = string.Empty;
     private string? descricao;
     private decimal? preco;
+    private int? ordemNoCardapio;
     private List<ProdutoOpcaoSecaoEdicaoModel> opcoesSecoes = new();
 
     protected override void OnInitialized()
@@ -81,6 +87,7 @@
         nome = Produto.Nome;
         descricao = Produto.Descricao;
         preco = Produto.Preco;
+        ordemNoCardapio = Produto.OrdemNoCardapio + 1;
         opcoesSecoes = ProdutoOpcaoSecaoEdicaoModel.FromEntities(Produto.OpcoesSecoes);
     }
 
@@ -96,16 +103,19 @@
         nome = Produto.Nome;
         descricao = Produto.Descricao;
         preco = Produto.Preco;
+        ordemNoCardapio = Produto.OrdemNoCardapio + 1;
         opcoesSecoes = ProdutoOpcaoSecaoEdicaoModel.FromEntities(Produto.OpcoesSecoes);
     }
 
     private async Task SalvarEdicaoAsync()
     {
-        if (string.IsNullOrWhiteSpace(nome) || !preco.HasValue || preco.Value <= 0)
+        if (string.IsNullOrWhiteSpace(nome) || !preco.HasValue || preco.Value <= 0 || (ordemNoCardapio.HasValue && ordemNoCardapio.Value < 1))
         {
-            Snackbar.Add("Preencha nome e preço válidos.", Severity.Warning);
+            Snackbar.Add("Preencha nome, preço e ordem válidos.", Severity.Warning);
             return;
         }
+
+        int? ordemInformada = ordemNoCardapio is > 0 ? ordemNoCardapio.Value : null;
 
         var atualizou = await ProdutoService.AtualizarProdutoAsync(
             Produto.Id,
@@ -113,7 +123,8 @@
             nome.Trim(),
             string.IsNullOrWhiteSpace(descricao) ? null : descricao.Trim(),
             preco.Value,
-            opcoesSecoes.Select(s => s.ToInput()).ToList());
+            opcoesSecoes.Select(s => s.ToInput()).ToList(),
+            ordemInformada);
 
         if (!atualizou)
         {

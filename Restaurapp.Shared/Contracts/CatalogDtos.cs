@@ -32,7 +32,9 @@ public class ProdutoOpcaoSecaoCatalogoDto
 public class ProdutoCatalogoDto
 {
     public int Id { get; set; }
+    public string Secao { get; set; } = string.Empty;
     public string Nome { get; set; } = string.Empty;
+    public int OrdemNoCardapio { get; set; }
     public decimal Preco { get; set; }
     public string? ImagemUrl { get; set; }
     public List<ProdutoOpcaoSecaoCatalogoDto> OpcoesSecoes { get; set; } = new();

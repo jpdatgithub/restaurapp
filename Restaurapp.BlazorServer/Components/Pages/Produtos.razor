@@ -32,7 +32,33 @@
         @foreach (var secao in secoes)
         {
             <MudDivider Class="my-3" />
-            <MudText Typo="Typo.h5" Class="mb-3">@secao</MudText>
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="mb-3">
+                <MudText Typo="Typo.h5">@secao</MudText>
+
+                @if (SecaoEstaOculta(secao))
+                {
+                    <MudTooltip Text="Seção escondida">
+                        <MudIcon Icon="@Icons.Material.Filled.VisibilityOff"
+                                 Size="Size.Small"
+                                 Color="Color.Secondary" />
+                    </MudTooltip>
+
+                    <MudTooltip Text="@(SecaoFoiMovidaParaOFundo(secao) ? "Restaurar posição original" : "Mover temporariamente para o fundo")">
+                        <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward"
+                                       Size="Size.Small"
+                                       Color="@(SecaoFoiMovidaParaOFundo(secao) ? Color.Warning : Color.Default)"
+                                       Variant="@(SecaoFoiMovidaParaOFundo(secao) ? Variant.Filled : Variant.Text)"
+                                       aria-label="Mover seção para o fundo"
+                                       OnClick="() => AlternarSecaoNoFundo(secao)" />
+                    </MudTooltip>
+                }
+
+                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                               Size="Size.Small"
+                               Color="Color.Primary"
+                               aria-label="Editar seção"
+                               OnClick="() => AbrirDialogEditarSecaoAsync(secao)" />
+            </MudStack>
 
             <div class="secao-scroll-horizontal">
                 @foreach (var produto in produtosPorSecao[secao])
@@ -40,11 +66,13 @@
                     <MudCard Elevation="1" Class="card-produto" @onclick="() => AbrirDialogDetalhesProdutoAsync(produto)">
                         <MudCardContent>
                             <div class="card-produto-imagem-area" @onclick:stopPropagation="true">
-                                <label class="card-produto-imagem-label @(produtoIdEmUpload == produto.Id ? "uploading" : string.Empty)"
-                                       for="@ObterInputImagemId(produto.Id)">
+                                <label
+                                    class="card-produto-imagem-label @(produtoIdEmUpload == produto.Id ? "uploading" : string.Empty)"
+                                    for="@ObterInputImagemId(produto.Id)">
                                     @if (produtoIdEmUpload == produto.Id)
                                     {
-                                        <MudProgressCircular Class="card-produto-upload-loader" Indeterminate="true" Size="Size.Large" Color="Color.Primary" />
+                                        <MudProgressCircular Class="card-produto-upload-loader" Indeterminate="true" Size="Size.Large"
+                                                             Color="Color.Primary" />
                                         <MudText Typo="Typo.caption" Class="mt-2">Enviando imagem...</MudText>
                                     }
                                     else if (!string.IsNullOrWhiteSpace(produto.ImagemUrl))
@@ -56,15 +84,14 @@
                                     }
                                     else
                                     {
-                                        <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" Size="Size.Large" Color="Color.Primary" />
+                                        <MudIcon Icon="@Icons.Material.Filled.AddPhotoAlternate" Size="Size.Large"
+                                                 Color="Color.Primary" />
                                         <MudText Typo="Typo.caption" Class="mt-2">Clique para enviar imagem</MudText>
                                     }
                                 </label>
 
-                                <InputFile id="@ObterInputImagemId(produto.Id)"
-                                           class="card-produto-imagem-input"
-                                           accept=".jpg,.jpeg,.png,.webp"
-                                           OnChange="@(args => UploadImagemProdutoAsync(produto, args))"
+                                <InputFile id="@ObterInputImagemId(produto.Id)" class="card-produto-imagem-input"
+                                           accept=".jpg,.jpeg,.png,.webp" OnChange="@(args => UploadImagemProdutoAsync(produto, args))"
                                            multiple="false" />
                             </div>
 
@@ -79,7 +106,7 @@
                             }
 
                             <MudText Typo="Typo.body2" Class="descricao-clipada mt-2">@(string.IsNullOrWhiteSpace(produto.Descricao)
-                                                                                                                    ? "Sem descrição" : produto.Descricao)</MudText>
+                                                                                                                                                                                    ? "Sem descrição" : produto.Descricao)</MudText>
                             </MudCardContent>
                         </MudCard>
                     }
@@ -120,7 +147,7 @@
         .card-produto-imagem-label {
             position: relative;
             height: 120px;
-            border: 1px dashed rgba(0,0,0,0.25);
+            border: 1px dashed rgba(0, 0, 0, 0.25);
             border-radius: 6px;
             display: flex;
             align-items: center;
@@ -234,6 +261,9 @@
 @code {
     private List<Produto>? produtos;
     private Dictionary<string, List<Produto>> produtosPorSecao = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, bool> statusSecoes = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> secoesMovidasParaOFundo = new(StringComparer.OrdinalIgnoreCase);
+    private List<string> secoesNaOrdemOriginal = new();
     private List<string> secoes = new();
     private int? produtoIdEmUpload;
 
@@ -250,13 +280,33 @@
     private async Task CarregarProdutosAsync()
     {
         produtos = await ProdutoService.ObterProdutosAsync();
+        statusSecoes = await ProdutoService.ObterStatusSecoesAsync();
 
         produtosPorSecao = produtos
             .GroupBy(p => string.IsNullOrWhiteSpace(p.Secao) ? "Sem seção" : p.Secao.Trim())
-            .OrderBy(g => g.Key)
-            .ToDictionary(g => g.Key, g => g.OrderBy(p => p.Nome).ToList(), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(p => p.OrdemNoCardapio).ThenBy(p => p.Nome).ToList(),
+                StringComparer.OrdinalIgnoreCase);
 
-        secoes = produtosPorSecao.Keys.ToList();
+        secoes = (await ProdutoService.ObterSecoesAsync())
+            .Where(secao => produtosPorSecao.ContainsKey(secao))
+            .ToList();
+
+        foreach (var secao in produtosPorSecao.Keys)
+        {
+            if (!secoes.Any(s => string.Equals(s, secao, StringComparison.OrdinalIgnoreCase)))
+            {
+                secoes.Add(secao);
+            }
+        }
+
+        secoesNaOrdemOriginal = secoes
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        secoesMovidasParaOFundo.RemoveWhere(secao => !SecaoEstaOculta(secao) || !secoesNaOrdemOriginal.Any(s => string.Equals(s, secao, StringComparison.OrdinalIgnoreCase)));
+        secoes = ReordenarSecoesParaVisualizacao(secoesNaOrdemOriginal);
     }
 
     private async Task UploadImagemProdutoAsync(Produto produto, InputFileChangeEventArgs args)
@@ -315,9 +365,14 @@
         };
 
         var secoesExistentes = await ProdutoService.ObterSecoesAsync();
+        var proximasOrdensProdutoPorSecao = await ProdutoService.ObterProximasOrdensProdutoPorSecaoAsync();
+        var proximaOrdemSecaoSugerida = await ProdutoService.ObterProximaOrdemSecaoSugeridaAsync();
+
         var parametros = new DialogParameters<DialogCadastrarProduto>
         {
-            { x => x.SecoesDisponiveis, secoesExistentes }
+            { x => x.SecoesDisponiveis, secoesExistentes },
+            { x => x.ProximasOrdensProdutoPorSecao, proximasOrdensProdutoPorSecao },
+            { x => x.ProximaOrdemSecaoSugerida, proximaOrdemSecaoSugerida }
         };
 
         var dialog = await DialogService.ShowAsync<DialogCadastrarProduto>("Cadastrar produto", parametros, options);
@@ -336,11 +391,13 @@
         try
         {
             await ProdutoService.CadastrarProdutoAsync(
-                novoProduto.Secao,
-                novoProduto.Nome,
-                novoProduto.Descricao,
-                novoProduto.Valor,
-                novoProduto.OpcoesSecoes.Select(s => s.ToInput()).ToList());
+                secao: novoProduto.Secao,
+                nome: novoProduto.Nome,
+                descricao: novoProduto.Descricao,
+                valor: novoProduto.Valor,
+                opcoesSecoes: novoProduto.OpcoesSecoes.Select(s => s.ToInput()).ToList(),
+                ordemNoCardapioInformada: novoProduto.OrdemProdutoInformada,
+                ordemSecaoNoCardapioInformada: novoProduto.OrdemSecaoInformada);
 
             await CarregarProdutosAsync();
             Snackbar.Add("Produto cadastrado com sucesso!", Severity.Success);
@@ -348,6 +405,89 @@
         catch (Exception ex)
         {
             Snackbar.Add($"Erro ao cadastrar produto: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private bool SecaoEstaOculta(string nomeSecao)
+    {
+        return statusSecoes.TryGetValue(nomeSecao, out var ativa) && !ativa;
+    }
+
+    private bool SecaoFoiMovidaParaOFundo(string nomeSecao)
+    {
+        return secoesMovidasParaOFundo.Contains(nomeSecao);
+    }
+
+    private void AlternarSecaoNoFundo(string nomeSecao)
+    {
+        if (!SecaoEstaOculta(nomeSecao))
+        {
+            secoesMovidasParaOFundo.Remove(nomeSecao);
+            secoes = ReordenarSecoesParaVisualizacao(secoesNaOrdemOriginal);
+            return;
+        }
+
+        if (!secoesMovidasParaOFundo.Add(nomeSecao))
+        {
+            secoesMovidasParaOFundo.Remove(nomeSecao);
+        }
+
+        secoes = ReordenarSecoesParaVisualizacao(secoesNaOrdemOriginal);
+    }
+
+    private List<string> ReordenarSecoesParaVisualizacao(IEnumerable<string> secoesBase)
+    {
+        var listaBase = secoesBase
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var secoesNormais = listaBase
+            .Where(secao => !secoesMovidasParaOFundo.Contains(secao))
+            .ToList();
+
+        var secoesNoFundo = listaBase
+            .Where(secao => secoesMovidasParaOFundo.Contains(secao))
+            .ToList();
+
+        return secoesNormais
+            .Concat(secoesNoFundo)
+            .ToList();
+    }
+
+    private async Task AbrirDialogEditarSecaoAsync(string nomeSecao)
+    {
+        var secaoCardapio = await ProdutoService.ObterSecaoCardapioPorNomeAsync(nomeSecao);
+        if (secaoCardapio is null)
+        {
+            Snackbar.Add("Não foi possível localizar a seção para edição.", Severity.Warning);
+            return;
+        }
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            BackdropClick = false,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        };
+
+        var parametros = new DialogParameters<DialogEditarSecaoCardapio>
+        {
+            { x => x.Secao, secaoCardapio }
+        };
+
+        var dialog = await DialogService.ShowAsync<DialogEditarSecaoCardapio>("Editar seção", parametros, options);
+        var result = await dialog.Result;
+
+        if (result is null || result.Canceled)
+        {
+            return;
+        }
+
+        if (result.Data is DialogEditarSecaoCardapio.ResultadoDialogoSecao resultado && resultado.Atualizou)
+        {
+            await CarregarProdutosAsync();
+            Snackbar.Add("Seção atualizada com sucesso!", Severity.Success);
         }
     }
 

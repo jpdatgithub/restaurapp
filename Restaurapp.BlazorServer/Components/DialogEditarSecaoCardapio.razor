@@ -1,0 +1,103 @@
+@using Restaurapp.BlazorServer.Models
+@using Restaurapp.BlazorServer.Services
+
+@inject ProdutoService ProdutoService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Editar seção do cardápio</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <MudForm @ref="form" @bind-IsValid="success">
+            <MudTextField T="string" Label="Nome da seção" Required="true" RequiredError="Informe o nome da seção."
+                          MaxLength="20" Counter="20" @bind-Value="nome" />
+
+            <MudCheckBox T="bool" Label="Seção ativa" Class="mt-3" @bind-Value="ativa" />
+
+            <MudNumericField T="int?" Label="Ordem no cardápio" Variant="Variant.Outlined" Min="1" Immediate="true"
+                             Class="mt-3" HelperText="Use 1 para colocar a seção no topo do cardápio."
+                             @bind-Value="ordemNoCardapio" />
+        </MudForm>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SalvarAsync">Salvar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter]
+    public SecaoCardapio Secao { get; set; } = null!;
+
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private MudForm? form;
+    private bool success;
+    private string nome = string.Empty;
+    private bool ativa = true;
+    private int? ordemNoCardapio;
+
+    protected override void OnInitialized()
+    {
+        nome = Secao.Nome;
+        ativa = Secao.Ativa;
+        ordemNoCardapio = Secao.OrdemNoCardapio + 1;
+    }
+
+    private async Task SalvarAsync()
+    {
+        if (form is null)
+        {
+            return;
+        }
+
+        await form.ValidateAsync();
+
+        int? ordemInformada = ordemNoCardapio is > 0 ? ordemNoCardapio.Value : null;
+
+        if (!success
+            || string.IsNullOrWhiteSpace(nome)
+            || nome.Trim().Length > 20
+            || (ordemNoCardapio.HasValue && ordemNoCardapio.Value < 1))
+        {
+            Snackbar.Add("Preencha nome e ordem válidos para a seção.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var atualizou = await ProdutoService.AtualizarSecaoCardapioAsync(
+                Secao.Nome,
+                nome.Trim(),
+                ativa,
+                ordemInformada);
+
+            if (!atualizou)
+            {
+                Snackbar.Add("Não foi possível atualizar a seção.", Severity.Error);
+                return;
+            }
+
+            MudDialog.Close(DialogResult.Ok(new ResultadoDialogoSecao(true)));
+        }
+        catch (InvalidOperationException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao atualizar seção: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private void Cancelar()
+    {
+        MudDialog.Cancel();
+    }
+
+    public sealed record ResultadoDialogoSecao(bool Atualizou);
+}

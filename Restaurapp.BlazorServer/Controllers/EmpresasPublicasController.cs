@@ -53,15 +53,26 @@ namespace Restaurapp.BlazorServer.Controllers
                 return NotFound();
             }
 
+            var mapaOrdemSecoes = await _context.SecoesCardapio
+                .IgnoreQueryFilters()
+                .AsNoTracking()
+                .Where(s => s.EmpresaId == empresaId && s.Ativa)
+                .OrderBy(s => s.OrdemNoCardapio)
+                .ThenBy(s => s.Nome)
+                .ToDictionaryAsync(s => s.Nome, s => s.OrdemNoCardapio, StringComparer.OrdinalIgnoreCase);
+
             empresa.Produtos = await _context.Produtos
                 .IgnoreQueryFilters()
                 .AsNoTracking()
                 .Where(p => p.EmpresaId == empresaId && p.Ativo)
-                .OrderBy(p => p.Nome)
+                .OrderBy(p => p.OrdemNoCardapio)
+                .ThenBy(p => p.Nome)
                 .Select(p => new ProdutoCatalogoDto
                 {
                     Id = p.Id,
+                    Secao = p.Secao,
                     Nome = p.Nome,
+                    OrdemNoCardapio = p.OrdemNoCardapio,
                     Preco = p.Preco,
                     ImagemUrl = p.ImagemUrl,
                     OpcoesSecoes = p.OpcoesSecoes
@@ -91,6 +102,12 @@ namespace Restaurapp.BlazorServer.Controllers
                         }).ToList()
                 })
                 .ToListAsync();
+
+            empresa.Produtos = empresa.Produtos
+                .OrderBy(p => mapaOrdemSecoes.TryGetValue(p.Secao, out var ordemSecao) ? ordemSecao : int.MaxValue)
+                .ThenBy(p => p.OrdemNoCardapio)
+                .ThenBy(p => p.Nome)
+                .ToList();
 
             foreach (var produto in empresa.Produtos)
             {

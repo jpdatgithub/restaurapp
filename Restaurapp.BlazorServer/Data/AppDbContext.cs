@@ -27,6 +27,7 @@ namespace Restaurapp.BlazorServer.Data
         public DbSet<MagicRegisterToken> MagicRegisterTokens { get; set; }
         public DbSet<Transacao> Transacoes { get; set; }
         public DbSet<Produto> Produtos { get; set; }
+        public DbSet<SecaoCardapio> SecoesCardapio { get; set; }
         public DbSet<ProdutoOpcaoSecao> ProdutoOpcoesSecoes { get; set; }
         public DbSet<ProdutoOpcao> ProdutoOpcoes { get; set; }
         public DbSet<Pedido> Pedidos { get; set; }
@@ -49,6 +50,9 @@ namespace Restaurapp.BlazorServer.Data
 
             modelBuilder.Entity<Produto>()
                 .HasQueryFilter(p => p.EmpresaId == EmpresaId);
+
+            modelBuilder.Entity<SecaoCardapio>()
+                .HasQueryFilter(s => s.EmpresaId == EmpresaId);
 
             modelBuilder.Entity<Pedido>()
                 .HasQueryFilter(p => p.EmpresaId == EmpresaId);
@@ -131,6 +135,9 @@ namespace Restaurapp.BlazorServer.Data
                     .HasPrecision(18, 2)
                     .IsRequired();
 
+                entity.Property(p => p.OrdemNoCardapio)
+                    .IsRequired();
+
                 entity.Property(p => p.ImagemUrl)
                     .HasMaxLength(500);
 
@@ -138,6 +145,28 @@ namespace Restaurapp.BlazorServer.Data
                     .WithOne(s => s.Produto)
                     .HasForeignKey(s => s.ProdutoId)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<SecaoCardapio>(entity =>
+            {
+                entity.ToTable("SecoesCardapio");
+
+                entity.HasKey(s => s.Id);
+
+                entity.Property(s => s.Nome)
+                    .IsRequired()
+                    .HasMaxLength(80);
+
+                entity.Property(s => s.OrdemNoCardapio)
+                    .IsRequired();
+
+                entity.Property(s => s.Ativa)
+                    .IsRequired();
+
+                entity.HasIndex(s => new { s.EmpresaId, s.Nome })
+                    .IsUnique();
+
+                entity.HasIndex(s => new { s.EmpresaId, s.OrdemNoCardapio });
             });
 
             modelBuilder.Entity<ProdutoOpcaoSecao>(entity =>

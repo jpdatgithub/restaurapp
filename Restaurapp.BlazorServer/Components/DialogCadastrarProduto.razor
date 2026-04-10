@@ -11,7 +11,7 @@
                     @if (!novaSecao)
                     {
                         <MudSelect T="string" Label="Seção" Required="true" RequiredError="Selecione uma seção."
-                                   @bind-Value="secaoSelecionada">
+                                   @bind-Value="secaoSelecionada" @bind-Value:after="AoAlterarSecao">
                             @foreach (var secao in secoesDisponiveis)
                             {
                                 <MudSelectItem T="string" Value="@secao">@secao</MudSelectItem>
@@ -20,11 +20,19 @@
                     }
                     else
                     {
-                        <MudTextField T="string" Label="Nova seção" Required="true" RequiredError="Informe a seção." MaxLength="20"
-                                      Counter="20" @bind-Value="novaSecaoNome" />
+                        <MudTextField T="string" Label="Nova seção" Required="true" RequiredError="Informe a seção."
+                                      MaxLength="20" Counter="20" @bind-Value="novaSecaoNome" />
                     }
 
-                    <MudCheckBox T="bool" Class="mt-2" Label="Nova seção?" @bind-Value="novaSecao" />
+                    <MudCheckBox T="bool" Class="mt-2" Label="Nova seção?" @bind-Value="novaSecao"
+                                 @bind-Value:after="AoAlternarNovaSecao" />
+
+                    @if (novaSecao)
+                    {
+                        <MudNumericField T="int?" Label="Ordem da seção no cardápio (opcional)" Variant="Variant.Outlined"
+                                         Min="1" Immediate="true" HelperText="Use 1 para colocar a nova seção no topo do cardápio."
+                                         Class="mt-3" @bind-Value="ordemSecaoNoCardapio" />
+                    }
 
                     <MudTextField T="string" Label="Nome" Required="true" RequiredError="Informe o nome do produto."
                                   Class="mt-2" @bind-Value="nome" />
@@ -34,6 +42,10 @@
                     <MudNumericField T="decimal?" Label="Preço" Variant="Variant.Outlined" Min="0.01m"
                                      Adornment="Adornment.Start" AdornmentText="R$" Required="true"
                                      RequiredError="Informe o preço do produto." Class="mt-3" @bind-Value="preco" />
+
+                    <MudNumericField T="int?" Label="Ordem no cardápio (opcional)" Variant="Variant.Outlined" Min="1"
+                                     Immediate="true" HelperText="Use 1 para colocar o produto no topo da seção." Class="mt-3"
+                                     @bind-Value="ordemNoCardapio" />
                 </MudTabPanel>
                 <MudTabPanel Text="Opções" Icon="@Icons.Material.Filled.Tune">
                     <ProdutoOpcoesEditor Secoes="opcoesSecoes" />
@@ -51,6 +63,12 @@
     [Parameter]
     public List<string> SecoesDisponiveis { get; set; } = new();
 
+    [Parameter]
+    public Dictionary<string, int> ProximasOrdensProdutoPorSecao { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    [Parameter]
+    public int ProximaOrdemSecaoSugerida { get; set; } = 1;
+
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
@@ -63,18 +81,61 @@
     private string nome = string.Empty;
     private string descricao = string.Empty;
     private decimal? preco;
+    private int? ordemNoCardapio;
+    private int? ordemSecaoNoCardapio;
     private List<ProdutoOpcaoSecaoEdicaoModel> opcoesSecoes = new();
 
     protected override void OnInitialized()
     {
         secoesDisponiveis = SecoesDisponiveis
-        .Where(s => !string.IsNullOrWhiteSpace(s))
-        .Select(s => s.Trim())
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .OrderBy(s => s)
-        .ToList();
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s)
+            .ToList();
 
         secaoSelecionada = secoesDisponiveis.FirstOrDefault();
+        ordemNoCardapio = ObterSugestaoOrdemProduto();
+        ordemSecaoNoCardapio = ProximaOrdemSecaoSugerida > 0 ? ProximaOrdemSecaoSugerida : 1;
+    }
+
+    private void AoAlterarSecao()
+    {
+        if (!novaSecao)
+        {
+            ordemNoCardapio = ObterSugestaoOrdemProduto();
+        }
+    }
+
+    private void AoAlternarNovaSecao()
+    {
+        ordemNoCardapio = ObterSugestaoOrdemProduto();
+
+        if (novaSecao)
+        {
+            ordemSecaoNoCardapio ??= ProximaOrdemSecaoSugerida > 0 ? ProximaOrdemSecaoSugerida : 1;
+        }
+        else
+        {
+            ordemSecaoNoCardapio = null;
+        }
+    }
+
+    private int ObterSugestaoOrdemProduto()
+    {
+        if (novaSecao)
+        {
+            return 1;
+        }
+
+        if (!string.IsNullOrWhiteSpace(secaoSelecionada)
+            && ProximasOrdensProdutoPorSecao.TryGetValue(secaoSelecionada.Trim(), out var sugestao)
+            && sugestao > 0)
+        {
+            return sugestao;
+        }
+
+        return 1;
     }
 
     private async Task Submit()
@@ -87,24 +148,33 @@
         await form.ValidateAsync();
 
         var secao = novaSecao
-        ? novaSecaoNome?.Trim()
-        : secaoSelecionada?.Trim();
+            ? novaSecaoNome?.Trim()
+            : secaoSelecionada?.Trim();
+
+        int? ordemProdutoInformada = ordemNoCardapio is > 0 ? ordemNoCardapio.Value : null;
+        int? ordemSecaoInformada = novaSecao && ordemSecaoNoCardapio is > 0
+            ? ordemSecaoNoCardapio.Value
+            : null;
 
         if (!success
-        || preco is null
-        || string.IsNullOrWhiteSpace(secao)
-        || secao.Length > 20
-        || string.IsNullOrWhiteSpace(nome))
+            || preco is null
+            || string.IsNullOrWhiteSpace(secao)
+            || secao.Length > 20
+            || string.IsNullOrWhiteSpace(nome)
+            || (ordemNoCardapio.HasValue && ordemNoCardapio.Value < 1)
+            || (novaSecao && ordemSecaoNoCardapio.HasValue && ordemSecaoNoCardapio.Value < 1))
         {
             return;
         }
 
         MudDialog.Close(DialogResult.Ok(new NovoProdutoDialogResult(
-        secao,
-        nome.Trim(),
-        string.IsNullOrWhiteSpace(descricao) ? null : descricao.Trim(),
-        preco.Value,
-        opcoesSecoes.Select(s => s.Clone()).ToList())));
+            secao,
+            nome.Trim(),
+            string.IsNullOrWhiteSpace(descricao) ? null : descricao.Trim(),
+            preco.Value,
+            ordemProdutoInformada,
+            ordemSecaoInformada,
+            opcoesSecoes.Select(s => s.Clone()).ToList())));
     }
 
     private void Cancel() => MudDialog.Cancel();
@@ -114,5 +184,7 @@
         string Nome,
         string? Descricao,
         decimal Valor,
+        int? OrdemProdutoInformada,
+        int? OrdemSecaoInformada,
         List<ProdutoOpcaoSecaoEdicaoModel> OpcoesSecoes);
 }

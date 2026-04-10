@@ -36,45 +36,51 @@ else
     }
     else
     {
-        <MudGrid>
-            @foreach (var produto in empresa.Produtos)
-            {
-                <MudItem xs="12" sm="6" md="4" lg="3">
-                    <MudCard>
-                        <MudCardContent>
-                            <div
-                                style="height:140px;border-radius:8px;overflow:hidden;margin-bottom:12px;background:linear-gradient(135deg, rgba(255,248,238,0.9), rgba(255,255,255,1));display:flex;align-items:center;justify-content:center;">
-                                @if (!string.IsNullOrWhiteSpace(produto.ImagemUrl))
-                                {
-                                    <img src="@produto.ImagemUrl" alt="@produto.Nome"
-                                         style="width:100%;height:100%;object-fit:cover;" />
-                                }
-                                else
-                                {
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Sem imagem</MudText>
-                                }
-                            </div>
+        @foreach (var grupoSecao in ObterProdutosAgrupadosPorSecao())
+        {
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h5" Class="mb-3">@grupoSecao.Key</MudText>
 
-                            <MudText Typo="Typo.h6">@produto.Nome</MudText>
-                            <MudText Typo="Typo.body2" Color="Color.Primary" Class="mt-2">
-                                @produto.Preco.ToString("C", CultureInfo.GetCultureInfo("pt-BR"))
-                            </MudText>
-                            @if (produto.OpcoesSecoes.Any())
-                            {
-                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="mt-2">
-                                    Personalizável
-                                </MudChip>
-                            }
-                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
-                                       StartIcon="@Icons.Material.Filled.AddShoppingCart"
-                                       OnClick="() => AdicionarAoCarrinhoAsync(produto)">
-                                Adicionar ao carrinho
-                            </MudButton>
-                        </MudCardContent>
-                    </MudCard>
-                </MudItem>
-            }
-        </MudGrid>
+            <MudGrid>
+                @foreach (var produto in grupoSecao)
+                {
+                    <MudItem xs="12" sm="6" md="4" lg="3">
+                        <MudCard>
+                            <MudCardContent>
+                                <div
+                                    style="height:140px;border-radius:8px;overflow:hidden;margin-bottom:12px;background:linear-gradient(135deg, rgba(255,248,238,0.9), rgba(255,255,255,1));display:flex;align-items:center;justify-content:center;">
+                                    @if (!string.IsNullOrWhiteSpace(produto.ImagemUrl))
+                                    {
+                                        <img src="@produto.ImagemUrl" alt="@produto.Nome"
+                                             style="width:100%;height:100%;object-fit:cover;" />
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Sem imagem</MudText>
+                                    }
+                                </div>
+
+                                <MudText Typo="Typo.h6">@produto.Nome</MudText>
+                                <MudText Typo="Typo.body2" Color="Color.Primary" Class="mt-2">
+                                    @produto.Preco.ToString("C", CultureInfo.GetCultureInfo("pt-BR"))
+                                </MudText>
+                                @if (produto.OpcoesSecoes.Any())
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="mt-2">
+                                        Personalizável
+                                    </MudChip>
+                                }
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
+                                           StartIcon="@Icons.Material.Filled.AddShoppingCart"
+                                           OnClick="() => AdicionarAoCarrinhoAsync(produto)">
+                                    Adicionar ao carrinho
+                                </MudButton>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
     }
 }
 
@@ -93,6 +99,14 @@ else
         mensagem = null;
         empresa = await AuthService.GetEmpresaCatalogoAsync(EmpresaId);
         carregando = false;
+    }
+
+    private IEnumerable<IGrouping<string, ProdutoCatalogoDto>> ObterProdutosAgrupadosPorSecao()
+    {
+        return empresa?.Produtos
+            .GroupBy(p => string.IsNullOrWhiteSpace(p.Secao) ? "Cardápio" : p.Secao.Trim())
+            .ToList()
+            ?? Enumerable.Empty<IGrouping<string, ProdutoCatalogoDto>>();
     }
 
     private async Task AdicionarAoCarrinhoAsync(ProdutoCatalogoDto produto)

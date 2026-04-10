@@ -8,6 +8,7 @@ namespace Restaurapp.BlazorServer.Models
         public string Nome { get; set; } = string.Empty;
         public string? Descricao { get; set; }
         public bool Ativo { get; set; } = true;
+        public int OrdemNoCardapio { get; set; }
         public decimal Preco { get; set; }
         public string? ImagemUrl { get; set; }
         public List<ProdutoOpcaoSecao> OpcoesSecoes { get; set; } = new();
